@@ -8,13 +8,16 @@ use winit::{
 	event_loop::{ControlFlow, EventLoop},
 };
 
+/// In range (0, 1)
+/// The higher the number the slower the zooming
+const ZOOM_SENSITIVITY: f32 = 0.9;
 
 fn main() {
 	env_logger::init();
 	let event_loop = EventLoop::new();
 
 	#[cfg(not(feature = "gl"))]
-		let (_window, hidpi_factor, size, surface) = {
+		let (_window, mut hidpi_factor, size, surface) = {
 		let window = winit::window::Window::new(&event_loop).unwrap();
 		let hidpi_factor = window.hidpi_factor();
 		let size = window.inner_size().to_physical(hidpi_factor);
@@ -58,6 +61,7 @@ fn main() {
 		limits: wgpu::Limits::default(),
 	});
 
+	// Load vertex shader
 	let vs = wgpu::read_spirv(
 		glsl_to_spirv::compile(
 			include_str!("shader.vert"),
@@ -68,6 +72,7 @@ fn main() {
 	let vs_module =
 		device.create_shader_module(&vs);
 
+	// Load fragment shader
 	let fs = wgpu::read_spirv(
 		glsl_to_spirv::compile(
 			include_str!("shader.frag"),
@@ -78,29 +83,60 @@ fn main() {
 	let fs_module =
 		device.create_shader_module(&fs);
 
-	//	let size_slice = &[size.width, size.height];
-	//	const SIZE_SLICE_LEN: usize = 2;
-	//	let window_size_size
-	//: wgpu::BufferAddress = std::mem::size_of_val(size_slice) as wgpu::BufferAddress;
 	#[repr(C)]
 	#[derive(Clone, Copy)]
 	struct WindowSize {
-		pos: [f32; 2]
+		size: [f32; 2]
 	}
 
-	let window_size = WindowSize {
-		pos: [size.width as f32, size.height as f32]
+	let mut window_size = WindowSize {
+		size: [size.width as f32, size.height as f32]
 	};
 
 	let window_size_size = std::mem::size_of::<WindowSize>() as wgpu::BufferAddress;
 
-	log::info!("Window size array is: {}", window_size_size);
-
-	let uniform_buf = device.create_buffer_mapped(
+	let window_size_buf = device.create_buffer_mapped(
 		1,
 		wgpu::BufferUsage::UNIFORM
 			| wgpu::BufferUsage::COPY_DST
 	).fill_from_slice(&[window_size]);
+
+	#[repr(C)]
+	#[derive(Clone, Copy)]
+	struct Zoom {
+		zoom: f32
+	}
+
+	let mut zoom = Zoom {
+		zoom: 0.003
+	};
+
+	let zoom_size = std::mem::size_of_val(&zoom) as wgpu::BufferAddress;
+
+	let zoom_buf = device.create_buffer_mapped(
+		1,
+		wgpu::BufferUsage::UNIFORM
+			| wgpu::BufferUsage::COPY_DST
+	).fill_from_slice(&[zoom]);
+
+	#[repr(C)]
+	#[derive(Debug, Clone, Copy)]
+	struct Position {
+		pos: [f32;2]
+	}
+
+	let mut pos = Position {
+		pos: [0.0, 0.0]
+	};
+
+
+	let pos_size = std::mem::size_of_val(&pos) as wgpu::BufferAddress;
+
+	let position_buf = device.create_buffer_mapped(
+		1,
+		wgpu::BufferUsage::UNIFORM
+			| wgpu::BufferUsage::COPY_DST
+	).fill_from_slice(&[pos]);
 
 	let bind_group_layout =
 		device.create_bind_group_layout(
@@ -108,6 +144,20 @@ fn main() {
 				bindings: &[
 					wgpu::BindGroupLayoutBinding {
 						binding: 0,
+						visibility: wgpu::ShaderStage::FRAGMENT,
+						ty: wgpu::BindingType::UniformBuffer {
+							dynamic: false
+						}
+					},
+					wgpu::BindGroupLayoutBinding {
+						binding: 1,
+						visibility: wgpu::ShaderStage::FRAGMENT,
+						ty: wgpu::BindingType::UniformBuffer {
+							dynamic: false
+						}
+					},
+					wgpu::BindGroupLayoutBinding {
+						binding: 2,
 						visibility: wgpu::ShaderStage::FRAGMENT,
 						ty: wgpu::BindingType::UniformBuffer {
 							dynamic: false
@@ -123,12 +173,27 @@ fn main() {
 			wgpu::Binding {
 				binding: 0,
 				resource: wgpu::BindingResource::Buffer {
-					buffer: &uniform_buf,
+					buffer: &window_size_buf,
 					range: 0..window_size_size
 				}
-			}
+			},
+			wgpu::Binding {
+				binding: 1,
+				resource: wgpu::BindingResource::Buffer {
+					buffer: &zoom_buf,
+					range: 0..zoom_size
+				}
+			},
+			wgpu::Binding {
+				binding: 2,
+				resource: wgpu::BindingResource::Buffer {
+					buffer: &position_buf,
+					range: 0..pos_size
+				}
+			},
 		],
 	});
+
 	let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 		bind_group_layouts: &[&bind_group_layout],
 	});
@@ -178,6 +243,12 @@ fn main() {
 		&sc_desc
 	);
 
+	let mut is_left_button_pressed = false;
+	let mut is_cursor_on_screen = false;
+
+	let mut prev_position = pos;
+	let mut first_drag_pos_received = false;
+
 	event_loop.run(move |event, _, control_flow| {
 		*control_flow = if cfg!(feature = "metal-auto-capture") {
 			ControlFlow::Exit
@@ -196,9 +267,7 @@ fn main() {
 					sc_desc.height = physical.height.round() as u32;
 					swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-					let window_size = WindowSize {
-						pos: [physical.width as f32, physical.height as f32]
-					};
+					window_size.size = [physical.width as f32, physical.height as f32];
 
 					let temp_buf = device.create_buffer_mapped(
 						1,
@@ -211,9 +280,123 @@ fn main() {
 					encoder.copy_buffer_to_buffer(
 						&temp_buf,
 						0,
-						&uniform_buf,
+						&window_size_buf,
 						0,
 						window_size_size
+					);
+
+					let command_buf = encoder.finish();
+					queue.submit(&[command_buf]);
+				}
+				event::WindowEvent::CursorLeft {..} => {
+					log::info!("Cursor left screen");
+					is_cursor_on_screen = false;
+				}
+				event::WindowEvent::CursorEntered {..} => {
+					log::info!("Cursor back on screen");
+					is_cursor_on_screen = true;
+				}
+				event::WindowEvent::CursorMoved {
+					position: winit::dpi::LogicalPosition {
+						x, y
+					},
+					..
+				} => {
+					if is_left_button_pressed && is_cursor_on_screen {
+						if !first_drag_pos_received {
+							prev_position.pos = [x as f32, y as f32];
+							first_drag_pos_received = true;
+						}
+						log::info!("Initial: {:?} Current: {:?},{:?}", prev_position, x, y);
+						let delta_x = x as f32 - prev_position.pos[0];
+						let delta_y = y as f32 - prev_position.pos[1];
+
+						prev_position.pos = [x as f32, y as f32];
+						log::info!("Deltas, x: {:?}; y: {:?}", delta_x, delta_y);
+						pos.pos[0] += delta_x * zoom.zoom;
+						pos.pos[1] += delta_y * zoom.zoom;
+
+						log::info!("New position: {:?}", pos);
+					}
+
+					let temp_buf = device.create_buffer_mapped(
+						1,
+						wgpu::BufferUsage::COPY_SRC
+					).fill_from_slice(&[pos]);
+
+					let mut encoder =
+						device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+					encoder.copy_buffer_to_buffer(
+						&temp_buf,
+						0,
+						&position_buf,
+						0,
+						pos_size
+					);
+
+					let command_buf = encoder.finish();
+					queue.submit(&[command_buf]);
+				}
+				event::WindowEvent::MouseInput {
+					button,
+					state,
+					..
+				} => {
+					if button != event::MouseButton::Left {
+						return;
+					}
+					match state {
+						event::ElementState::Pressed => {
+							log::info!("Pressed left mouse button.");
+							is_left_button_pressed = true;
+							first_drag_pos_received = false;
+						}
+						event::ElementState::Released => {
+							log::info!("Released left mouse button.");
+							is_left_button_pressed = false;
+						}
+					}
+				}
+				event::WindowEvent::MouseWheel {
+					delta,
+					..
+				} => {
+					let y_delta = {
+						match delta {
+							event::MouseScrollDelta::LineDelta(_, y) => {
+								y
+							}
+							event::MouseScrollDelta::PixelDelta(pos) => {
+								pos.y as f32
+							}
+						}
+					};
+					log::info!("MouseWheel moved delta: {:?}", y_delta);
+					// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
+					zoom.zoom *= (ZOOM_SENSITIVITY as f32).powi(y_delta.signum() as i32);
+
+//					if y_delta > 0.0 {
+//						zoom.zoom /= y_delta / ZOOM_SENSITIVITY;
+//					} else {
+//						zoom.zoom *= y_delta / -ZOOM_SENSITIVITY;
+//					}
+					log::info!("Zoom now of value: {:?}", zoom.zoom);
+
+					let temp_buf = device.create_buffer_mapped(
+						1,
+						wgpu::BufferUsage::COPY_SRC
+					).fill_from_slice(&[zoom]);
+
+					let mut encoder =
+						device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+					encoder.copy_buffer_to_buffer(
+						&temp_buf,
+						0,
+						&zoom_buf,
+						0,
+						zoom_size
 					);
 
 					let command_buf = encoder.finish();
@@ -230,6 +413,9 @@ fn main() {
 				}
 				| event::WindowEvent::CloseRequested => {
 					*control_flow = ControlFlow::Exit;
+				}
+				event::WindowEvent::HiDpiFactorChanged(hdpif) => {
+					hidpi_factor = hdpif;
 				}
 				_ => {}
 			},

@@ -8,6 +8,14 @@ layout(set = 0, binding = 0) uniform WindowSize { // https://github.com/gfx-rs/w
      vec2 size;
 };
 
+layout(set = 0, binding = 1) uniform Zoom {
+    float zoom;
+};
+
+layout(set = 0, binding = 2) uniform Pos {
+    vec2 pos;
+};
+
 layout(location = 0) out vec4 outColor;
 
 vec2 square(vec2 z) {
@@ -45,6 +53,7 @@ vec4 color(float it) {
 }
 
 void main() {
-    float iter = iterations(gl_FragCoord.xy/size);
+    vec2 transformed = zoom * (gl_FragCoord.xy - size/2) - pos; // https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L36
+    float iter = iterations(transformed);
     outColor = color(iter);
 }
