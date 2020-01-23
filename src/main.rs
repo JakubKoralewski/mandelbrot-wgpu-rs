@@ -2,23 +2,105 @@ extern crate winit;
 extern crate wgpu;
 extern crate env_logger;
 extern crate log;
+extern crate image;
+#[macro_use]
+extern crate lazy_static;
 
 use winit::{
-	event,
+	event::{self, VirtualKeyCode},
 	event_loop::{ControlFlow, EventLoop},
+	window::Fullscreen
 };
+use notify::{RecommendedWatcher, Watcher, RecursiveMode};
+use std::sync::mpsc;
+use std::fs::File;
+use std::io::Read;
+use std::time::Duration;
+use std::path::PathBuf;
+use wgpu_glyph::{Section, GlyphBrushBuilder, Scale};
+use std::time::Instant;
 
-/// In range (0, 1)
-/// The higher the number the slower the zooming
 const ZOOM_SENSITIVITY: f32 = 0.9;
+const TITLE: &str = "Ah shit here we go again";
+
+trait DigitsCountable {
+	fn count_digits(self) -> usize;
+}
+
+impl DigitsCountable for usize {
+	fn count_digits(self) -> usize {
+		let mut number = self;
+		let mut count: usize = 0;
+
+		while number > 0 {
+			number /= 10;
+			count += 1;
+		}
+
+		count
+	}
+}
+lazy_static! {
+	static ref ICON: winit::window::Icon = {
+		let icon_image =
+			image::load_from_memory_with_format(
+				include_bytes!("../res/gta_sa.ico"),
+				image::ImageFormat::ICO
+			).expect("Error decoding icon");
+
+		winit::window::Icon::from_rgba(icon_image.raw_pixels(), 256, 256)
+			.expect("Error creating Icon in winit")
+	};
+	/// Load vertex shader
+	static ref VS: Vec<u32> = wgpu::read_spirv(
+		glsl_to_spirv::compile(
+			include_str!("../shaders/shader.vert"),
+			glsl_to_spirv::ShaderType::Vertex
+		).unwrap()
+	).unwrap();
+	static ref ABSOLUTE_PATH: PathBuf = std::env::current_dir().unwrap();
+	static ref FRAG_SHADER_PATH: PathBuf = {
+		let mut frag_shader_path_buf: PathBuf = ABSOLUTE_PATH.clone();
+		let x = ["shaders", "shader.frag"].iter().collect();
+		frag_shader_path_buf.push::<PathBuf>(x);
+
+		log::info!("Frag shader path: {:?}", frag_shader_path_buf);
+		frag_shader_path_buf
+	};
+}
 
 fn main() {
 	env_logger::init();
+
+	let load_fs = move || -> Result<Vec<u32>, std::io::Error> {
+		log::info!("Loading fragment shader");
+		let mut buffer = String::new();
+		let mut f = File::open(&*FRAG_SHADER_PATH)?;
+		f.read_to_string(&mut buffer)?;
+
+		// Load fragment shader
+		wgpu::read_spirv(
+			glsl_to_spirv::compile(
+				&buffer,
+				glsl_to_spirv::ShaderType::Fragment
+			).expect("Compilation failed")
+		)
+	};
+	let mut fs = load_fs().expect("error loading fs");
+
 	let event_loop = EventLoop::new();
 
+	let icon: winit::window::Icon = (*ICON).clone();
+
+	let init_window = |window: &winit::window::Window| {
+		window.set_title("Initializing Vulkan...");
+		window.set_window_icon(Some(icon));
+	};
+
 	#[cfg(not(feature = "gl"))]
-		let (_window, mut hidpi_factor, size, surface) = {
+		let (window, mut hidpi_factor, size, surface) = {
 		let window = winit::window::Window::new(&event_loop).unwrap();
+		init_window(&window);
 		let hidpi_factor = window.hidpi_factor();
 		let size = window.inner_size().to_physical(hidpi_factor);
 
@@ -27,11 +109,11 @@ fn main() {
 	};
 
 	#[cfg(feature = "gl")]
-		let (_window, hidpi_factor, instance, size, surface) = {
+		let (window, hidpi_factor, instance, size, surface) = {
+		init_window(&window);
 		let wb = winit::WindowBuilder::new();
 		let cb = wgpu::glutin::ContextBuilder::new().with_vsync(true);
 		let context = cb.build_windowed(wb, &event_loop).unwrap();
-
 		let hidpi_factor = context.window().get_hidpi_factor();
 		let size = context
 			.window()
@@ -39,13 +121,16 @@ fn main() {
 			.unwrap()
 			.to_physical(hidpi_factor);
 
-		let (context, window) = unsafe { context.make_current().unwrap().split() };
+		let (context, window) = unsafe {
+			context.make_current().unwrap().split()
+		};
 
 		let instance = wgpu::Instance::new(context);
 		let surface = instance.get_surface();
 
 		(window, hidpi_factor, instance, size, surface)
 	};
+
 
 	let adapter = wgpu::Adapter::request(
 		&wgpu::RequestAdapterOptions {
@@ -54,34 +139,26 @@ fn main() {
 		},
 	).unwrap();
 
-	let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+	let (mut device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
 		extensions: wgpu::Extensions {
-			anisotropic_filtering: false,
+			anisotropic_filtering: true,
 		},
 		limits: wgpu::Limits::default(),
 	});
 
-	// Load vertex shader
-	let vs = wgpu::read_spirv(
-		glsl_to_spirv::compile(
-			include_str!("shader.vert"),
-			glsl_to_spirv::ShaderType::Vertex
-		).unwrap()
-	).unwrap();
-
 	let vs_module =
-		device.create_shader_module(&vs);
+		device.create_shader_module(&*VS);
 
-	// Load fragment shader
-	let fs = wgpu::read_spirv(
-		glsl_to_spirv::compile(
-			include_str!("shader.frag"),
-			glsl_to_spirv::ShaderType::Fragment
-		).unwrap()
-	).unwrap();
 
-	let fs_module =
-		device.create_shader_module(&fs);
+	let load_fs_module
+		= move |device: &wgpu::Device, fs: &[u32]| device.create_shader_module(fs);
+
+	let mut fs_module = load_fs_module(&device, &fs);
+
+	let (tx, rx) = mpsc::channel();
+	let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(2)).unwrap();
+
+	watcher.watch((*FRAG_SHADER_PATH).clone(), RecursiveMode::NonRecursive).unwrap();
 
 	#[repr(C)]
 	#[derive(Clone, Copy)]
@@ -122,13 +199,12 @@ fn main() {
 	#[repr(C)]
 	#[derive(Debug, Clone, Copy)]
 	struct Position {
-		pos: [f32;2]
+		pos: [f32; 2]
 	}
 
 	let mut pos = Position {
 		pos: [0.0, 0.0]
 	};
-
 
 	let pos_size = std::mem::size_of_val(&pos) as wgpu::BufferAddress;
 
@@ -198,41 +274,46 @@ fn main() {
 		bind_group_layouts: &[&bind_group_layout],
 	});
 
-	let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-		layout: &pipeline_layout,
-		vertex_stage: wgpu::ProgrammableStageDescriptor {
-			module: &vs_module,
-			entry_point: "main",
-		},
-		fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-			module: &fs_module,
-			entry_point: "main",
-		}),
-		rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-			front_face: wgpu::FrontFace::Ccw,
-			cull_mode: wgpu::CullMode::None,
-			depth_bias: 0,
-			depth_bias_slope_scale: 0.0,
-			depth_bias_clamp: 0.0,
-		}),
-		primitive_topology: wgpu::PrimitiveTopology::TriangleStrip,
-		color_states: &[wgpu::ColorStateDescriptor {
-			format: wgpu::TextureFormat::Bgra8UnormSrgb,
-			color_blend: wgpu::BlendDescriptor::REPLACE,
-			alpha_blend: wgpu::BlendDescriptor::REPLACE,
-			write_mask: wgpu::ColorWrite::ALL,
-		}],
-		depth_stencil_state: None,
-		index_format: wgpu::IndexFormat::Uint32,
-		vertex_buffers: &[],
-		sample_count: 1,
-		sample_mask: !0,
-		alpha_to_coverage_enabled: false,
-	});
+	let create_render_pipeline = move |device: &wgpu::Device, fs_module: &wgpu::ShaderModule| {
+		log::info!("Creating render pipeline");
+		device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+			layout: &pipeline_layout,
+			vertex_stage: wgpu::ProgrammableStageDescriptor {
+				module: &vs_module,
+				entry_point: "main",
+			},
+			fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+				module: &fs_module,
+				entry_point: "main",
+			}),
+			rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+				front_face: wgpu::FrontFace::Ccw,
+				cull_mode: wgpu::CullMode::None,
+				depth_bias: 0,
+				depth_bias_slope_scale: 0.0,
+				depth_bias_clamp: 0.0,
+			}),
+			primitive_topology: wgpu::PrimitiveTopology::TriangleStrip,
+			color_states: &[wgpu::ColorStateDescriptor {
+				format: wgpu::TextureFormat::Bgra8UnormSrgb,
+				color_blend: wgpu::BlendDescriptor::REPLACE,
+				alpha_blend: wgpu::BlendDescriptor::REPLACE,
+				write_mask: wgpu::ColorWrite::ALL,
+			}],
+			depth_stencil_state: None,
+			index_format: wgpu::IndexFormat::Uint32,
+			vertex_buffers: &[],
+			sample_count: 1,
+			sample_mask: !0,
+			alpha_to_coverage_enabled: false,
+		})
+	};
 
+	let mut render_pipeline = create_render_pipeline(&device, &fs_module);
+	let render_format = wgpu::TextureFormat::Bgra8UnormSrgb;
 	let mut sc_desc = wgpu::SwapChainDescriptor {
 		usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-		format: wgpu::TextureFormat::Bgra8UnormSrgb,
+		format: render_format,
 		width: size.width.round() as u32,
 		height: size.height.round() as u32,
 		present_mode: wgpu::PresentMode::Vsync,
@@ -243,11 +324,19 @@ fn main() {
 		&sc_desc
 	);
 
+	let font: &[u8] = include_bytes!("../fonts/impact.ttf");
+	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(font)
+		.build(&mut device, render_format);
+
 	let mut is_left_button_pressed = false;
 	let mut is_cursor_on_screen = false;
 
 	let mut prev_position = pos;
 	let mut first_drag_pos_received = false;
+
+	window.set_title(TITLE);
+	let mut past = Instant::now();
+	let mut is_full_screen = false;
 
 	event_loop.run(move |event, _, control_flow| {
 		*control_flow = if cfg!(feature = "metal-auto-capture") {
@@ -288,11 +377,11 @@ fn main() {
 					let command_buf = encoder.finish();
 					queue.submit(&[command_buf]);
 				}
-				event::WindowEvent::CursorLeft {..} => {
+				event::WindowEvent::CursorLeft { .. } => {
 					log::info!("Cursor left screen");
 					is_cursor_on_screen = false;
 				}
-				event::WindowEvent::CursorEntered {..} => {
+				event::WindowEvent::CursorEntered { .. } => {
 					log::info!("Cursor back on screen");
 					is_cursor_on_screen = true;
 				}
@@ -376,11 +465,6 @@ fn main() {
 					// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
 					zoom.zoom *= (ZOOM_SENSITIVITY as f32).powi(y_delta.signum() as i32);
 
-//					if y_delta > 0.0 {
-//						zoom.zoom /= y_delta / ZOOM_SENSITIVITY;
-//					} else {
-//						zoom.zoom *= y_delta / -ZOOM_SENSITIVITY;
-//					}
 					log::info!("Zoom now of value: {:?}", zoom.zoom);
 
 					let temp_buf = device.create_buffer_mapped(
@@ -414,25 +498,57 @@ fn main() {
 				| event::WindowEvent::CloseRequested => {
 					*control_flow = ControlFlow::Exit;
 				}
+				event::WindowEvent::KeyboardInput {
+					input: event::KeyboardInput {
+						virtual_keycode: Some(key),
+						state: event::ElementState::Pressed,
+						..
+					},
+					..
+				} => {
+					match key {
+						VirtualKeyCode::F12 => {
+							is_full_screen = !is_full_screen;
+							let video_mode = window.current_monitor().video_modes().next().unwrap();
+							if is_full_screen {
+								window.set_fullscreen(Some(Fullscreen::Exclusive(video_mode)));
+							} else {
+								window.set_fullscreen(None);
+							}
+						},
+						VirtualKeyCode::Numpad1 | VirtualKeyCode::Key1 => {}
+						_ => ()
+					}
+				}
 				event::WindowEvent::HiDpiFactorChanged(hdpif) => {
 					hidpi_factor = hdpif;
 				}
 				_ => {}
 			},
 			event::Event::EventsCleared => {
+				if let Ok(notify::DebouncedEvent::Write(..)) = rx.try_recv() {
+					log::info!("Write event in fragment shader");
+					window.set_title("Loading shader.frag...");
+					fs = load_fs().unwrap();
+					fs_module = load_fs_module(&device, &fs);
+					render_pipeline = create_render_pipeline(&device, &fs_module);
+					window.set_title(TITLE);
+				}
+
 				let frame = swap_chain
 					.get_next_texture();
-				let mut encoder =
+				let mut encoder1 =
 					device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
 				{
-					let mut rpass = encoder.begin_render_pass(
+					let mut rpass = encoder1.begin_render_pass(
 						&wgpu::RenderPassDescriptor {
 							color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
 								attachment: &frame.view,
 								resolve_target: None,
 								load_op: wgpu::LoadOp::Clear,
 								store_op: wgpu::StoreOp::Store,
-								clear_color: wgpu::Color::GREEN,
+								clear_color: wgpu::Color::BLACK,
 							}],
 							depth_stencil_attachment: None,
 						}
@@ -441,8 +557,57 @@ fn main() {
 					rpass.set_bind_group(0, &bind_group, &[]);
 					rpass.draw(0..4, 0..1);
 				}
+				let mut encoder2 =
+					device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+				{
+					let now = Instant::now();
+					let time = now - past;
+					past = now;
+					let fps = (1.0 / time.as_secs_f32()).round() as usize;
 
-				queue.submit(&[encoder.finish()]);
+					let number_section = Section {
+						text: &format!("{}", fps),
+						screen_position: (size.width as f32 / 100.0, size.height as f32 / 100.0),
+						scale: Scale::uniform(32.0),
+						color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
+						..Section::default() // color, position, etc
+					};
+
+					let mut number_section_outline = number_section;
+					number_section_outline.color = [0.0f32, 0.0f32, 0.0f32, 1.0f32];
+					number_section_outline.scale = Scale::uniform(38.0);
+					number_section_outline.screen_position.0 -= 3.0f32;
+					number_section_outline.screen_position.1 -= 3.0f32;
+
+					let fps_section = Section {
+						text: "fps",
+						screen_position: (size.width as f32 / 100.0 + 16.0 * fps.count_digits() as f32, size.height as f32 / 100.0),
+						scale: Scale::uniform(32.0),
+						color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
+						..Section::default() // color, position, etc
+					};
+
+					let mut fps_section_outline = fps_section;
+					fps_section_outline.color = [0.0f32, 0.0f32, 0.0f32, 1.0f32];
+					fps_section_outline.scale = Scale::uniform(38.0);
+					fps_section_outline.screen_position.0 -= 3.0f32;
+					fps_section_outline.screen_position.1 -= 3.0f32;
+
+					glyph_brush.queue(fps_section_outline);
+					glyph_brush.queue(fps_section);
+					glyph_brush.queue(number_section_outline);
+					glyph_brush.queue(number_section);
+
+					glyph_brush.draw_queued(
+						&mut device,
+						&mut encoder2,
+						&frame.view,
+						size.width.round() as u32,
+						size.height.round() as u32,
+					).expect("error drawing text");
+				}
+
+				queue.submit(&[encoder1.finish(), encoder2.finish()]);
 			}
 			_ => (),
 		}
