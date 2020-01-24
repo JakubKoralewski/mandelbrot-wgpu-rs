@@ -12,13 +12,15 @@ use winit::{
 	window::Fullscreen
 };
 use notify::{RecommendedWatcher, Watcher, RecursiveMode};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::fs::File;
 use std::io::Read;
 use std::time::Duration;
 use std::path::PathBuf;
 use wgpu_glyph::{Section, GlyphBrushBuilder, Scale};
 use std::time::Instant;
+use std::thread;
+use std::ops::DerefMut;
 
 const ZOOM_SENSITIVITY: f32 = 0.9;
 const TITLE: &str = "Ah shit here we go again";
@@ -86,7 +88,7 @@ fn main() {
 			).expect("Compilation failed")
 		)
 	};
-	let mut fs = load_fs().expect("error loading fs");
+	let fs = load_fs().expect("error loading fs");
 
 	let event_loop = EventLoop::new();
 
@@ -131,7 +133,6 @@ fn main() {
 		(window, hidpi_factor, instance, size, surface)
 	};
 
-
 	let adapter = wgpu::Adapter::request(
 		&wgpu::RequestAdapterOptions {
 			power_preference: wgpu::PowerPreference::Default,
@@ -139,7 +140,7 @@ fn main() {
 		},
 	).unwrap();
 
-	let (mut device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+	let (mut device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
 		extensions: wgpu::Extensions {
 			anisotropic_filtering: true,
 		},
@@ -149,15 +150,16 @@ fn main() {
 	let vs_module =
 		device.create_shader_module(&*VS);
 
-
 	let load_fs_module
 		= move |device: &wgpu::Device, fs: &[u32]| device.create_shader_module(fs);
 
-	let mut fs_module = load_fs_module(&device, &fs);
+	let fs_module = load_fs_module(&device, &fs);
 
 	let (tx, rx) = mpsc::channel();
-	let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(2)).unwrap();
+	let mut watcher: RecommendedWatcher =
+		Watcher::new(tx, Duration::from_millis(500)).unwrap();
 
+	log::info!("Starting watcher on {:?}", *FRAG_SHADER_PATH);
 	watcher.watch((*FRAG_SHADER_PATH).clone(), RecursiveMode::NonRecursive).unwrap();
 
 	#[repr(C)]
@@ -309,7 +311,7 @@ fn main() {
 		})
 	};
 
-	let mut render_pipeline = create_render_pipeline(&device, &fs_module);
+	let render_pipeline = create_render_pipeline(&device, &fs_module);
 	let render_format = wgpu::TextureFormat::Bgra8UnormSrgb;
 	let mut sc_desc = wgpu::SwapChainDescriptor {
 		usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
@@ -319,7 +321,7 @@ fn main() {
 		present_mode: wgpu::PresentMode::Vsync,
 	};
 
-	let mut swap_chain = device.create_swap_chain(
+	let swap_chain = device.create_swap_chain(
 		&surface,
 		&sc_desc
 	);
@@ -338,278 +340,333 @@ fn main() {
 	let mut past = Instant::now();
 	let mut is_full_screen = false;
 
-	event_loop.run(move |event, _, control_flow| {
-		*control_flow = if cfg!(feature = "metal-auto-capture") {
-			ControlFlow::Exit
-		} else {
-			ControlFlow::Poll
-		};
-		match event {
-			event::Event::WindowEvent { event, .. } => match event {
-				event::WindowEvent::Resized(size) => {
-					let physical = size.to_physical(hidpi_factor);
-					log::info!("Resizing to {:?}", physical);
-					if physical.width == 0. || physical.height == 0. {
-						return;
+	let rx = Arc::new(Mutex::new(rx));
+	let window = Arc::new(Mutex::new(window));
+	let fs = Arc::new(Mutex::new(fs));
+	let fs_module = Arc::new(Mutex::new(fs_module));
+	let render_pipeline = Arc::new(Mutex::new(render_pipeline));
+	let device = Arc::new(Mutex::new(device));
+
+	let load_fs_module
+		= move |device: Arc<Mutex<wgpu::Device>>, fs: &[u32]| device.lock().unwrap().create_shader_module(fs);
+
+	let create_render_pipeline = Arc::new(create_render_pipeline);
+
+	let create_render_pipeline_multithreaded = move |device: Arc<Mutex<wgpu::Device>>,
+	                                                 fs_module: Arc<Mutex<wgpu::ShaderModule>>| {
+		let create_render_pipeline = create_render_pipeline.clone();
+		create_render_pipeline(&device.lock().unwrap(), &fs_module.lock().unwrap())
+	};
+	let create_render_pipeline_multithreaded = Arc::new(create_render_pipeline_multithreaded);
+
+
+	let bind_group = Arc::new(Mutex::new(bind_group));
+	let swap_chain = Arc::new(Mutex::new(swap_chain));
+	let queue = Arc::new(Mutex::new(queue));
+
+	let render = {
+		let bind_group = Arc::clone(&bind_group);
+		let render_pipeline = Arc::clone(&render_pipeline);
+		let swap_chain = Arc::clone(&swap_chain);
+		let device = Arc::clone(&device);
+		let queue = Arc::clone(&queue);
+
+		Arc::new(Mutex::new(move || {
+			let mut swap_chain = swap_chain.lock().unwrap();
+			let frame = swap_chain
+				.get_next_texture();
+			let mut encoder1 =
+				device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+			{
+				let mut rpass = encoder1.begin_render_pass(
+					&wgpu::RenderPassDescriptor {
+						color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+							attachment: &frame.view,
+							resolve_target: None,
+							load_op: wgpu::LoadOp::Clear,
+							store_op: wgpu::StoreOp::Store,
+							clear_color: wgpu::Color::BLACK,
+						}],
+						depth_stencil_attachment: None,
 					}
-					sc_desc.width = physical.width.round() as u32;
-					sc_desc.height = physical.height.round() as u32;
-					swap_chain = device.create_swap_chain(&surface, &sc_desc);
-
-					window_size.size = [physical.width as f32, physical.height as f32];
-
-					let temp_buf = device.create_buffer_mapped(
-						1,
-						wgpu::BufferUsage::COPY_SRC
-					).fill_from_slice(&[window_size]);
-
-					let mut encoder =
-						device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
-					encoder.copy_buffer_to_buffer(
-						&temp_buf,
-						0,
-						&window_size_buf,
-						0,
-						window_size_size
-					);
-
-					let command_buf = encoder.finish();
-					queue.submit(&[command_buf]);
-				}
-				event::WindowEvent::CursorLeft { .. } => {
-					log::info!("Cursor left screen");
-					is_cursor_on_screen = false;
-				}
-				event::WindowEvent::CursorEntered { .. } => {
-					log::info!("Cursor back on screen");
-					is_cursor_on_screen = true;
-				}
-				event::WindowEvent::CursorMoved {
-					position: winit::dpi::LogicalPosition {
-						x, y
-					},
-					..
-				} => {
-					if is_left_button_pressed && is_cursor_on_screen {
-						if !first_drag_pos_received {
-							prev_position.pos = [x as f32, y as f32];
-							first_drag_pos_received = true;
-						}
-						log::info!("Initial: {:?} Current: {:?},{:?}", prev_position, x, y);
-						let delta_x = x as f32 - prev_position.pos[0];
-						let delta_y = y as f32 - prev_position.pos[1];
-
-						prev_position.pos = [x as f32, y as f32];
-						log::info!("Deltas, x: {:?}; y: {:?}", delta_x, delta_y);
-						pos.pos[0] += delta_x * zoom.zoom;
-						pos.pos[1] += delta_y * zoom.zoom;
-
-						log::info!("New position: {:?}", pos);
-					}
-
-					let temp_buf = device.create_buffer_mapped(
-						1,
-						wgpu::BufferUsage::COPY_SRC
-					).fill_from_slice(&[pos]);
-
-					let mut encoder =
-						device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
-					encoder.copy_buffer_to_buffer(
-						&temp_buf,
-						0,
-						&position_buf,
-						0,
-						pos_size
-					);
-
-					let command_buf = encoder.finish();
-					queue.submit(&[command_buf]);
-				}
-				event::WindowEvent::MouseInput {
-					button,
-					state,
-					..
-				} => {
-					if button != event::MouseButton::Left {
-						return;
-					}
-					match state {
-						event::ElementState::Pressed => {
-							log::info!("Pressed left mouse button.");
-							is_left_button_pressed = true;
-							first_drag_pos_received = false;
-						}
-						event::ElementState::Released => {
-							log::info!("Released left mouse button.");
-							is_left_button_pressed = false;
-						}
-					}
-				}
-				event::WindowEvent::MouseWheel {
-					delta,
-					..
-				} => {
-					let y_delta = {
-						match delta {
-							event::MouseScrollDelta::LineDelta(_, y) => {
-								y
-							}
-							event::MouseScrollDelta::PixelDelta(pos) => {
-								pos.y as f32
-							}
-						}
-					};
-					log::info!("MouseWheel moved delta: {:?}", y_delta);
-					// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
-					zoom.zoom *= (ZOOM_SENSITIVITY as f32).powi(y_delta.signum() as i32);
-
-					log::info!("Zoom now of value: {:?}", zoom.zoom);
-
-					let temp_buf = device.create_buffer_mapped(
-						1,
-						wgpu::BufferUsage::COPY_SRC
-					).fill_from_slice(&[zoom]);
-
-					let mut encoder =
-						device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
-					encoder.copy_buffer_to_buffer(
-						&temp_buf,
-						0,
-						&zoom_buf,
-						0,
-						zoom_size
-					);
-
-					let command_buf = encoder.finish();
-					queue.submit(&[command_buf]);
-				}
-				event::WindowEvent::KeyboardInput {
-					input:
-					event::KeyboardInput {
-						virtual_keycode: Some(event::VirtualKeyCode::Escape),
-						state: event::ElementState::Pressed,
-						..
-					},
-					..
-				}
-				| event::WindowEvent::CloseRequested => {
-					*control_flow = ControlFlow::Exit;
-				}
-				event::WindowEvent::KeyboardInput {
-					input: event::KeyboardInput {
-						virtual_keycode: Some(key),
-						state: event::ElementState::Pressed,
-						..
-					},
-					..
-				} => {
-					match key {
-						VirtualKeyCode::F12 => {
-							is_full_screen = !is_full_screen;
-							let video_mode = window.current_monitor().video_modes().next().unwrap();
-							if is_full_screen {
-								window.set_fullscreen(Some(Fullscreen::Exclusive(video_mode)));
-							} else {
-								window.set_fullscreen(None);
-							}
-						},
-						VirtualKeyCode::Numpad1 | VirtualKeyCode::Key1 => {}
-						_ => ()
-					}
-				}
-				event::WindowEvent::HiDpiFactorChanged(hdpif) => {
-					hidpi_factor = hdpif;
-				}
-				_ => {}
-			},
-			event::Event::EventsCleared => {
-				if let Ok(notify::DebouncedEvent::Write(..)) = rx.try_recv() {
-					log::info!("Write event in fragment shader");
-					window.set_title("Loading shader.frag...");
-					fs = load_fs().unwrap();
-					fs_module = load_fs_module(&device, &fs);
-					render_pipeline = create_render_pipeline(&device, &fs_module);
-					window.set_title(TITLE);
-				}
-
-				let frame = swap_chain
-					.get_next_texture();
-				let mut encoder1 =
-					device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
-				{
-					let mut rpass = encoder1.begin_render_pass(
-						&wgpu::RenderPassDescriptor {
-							color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-								attachment: &frame.view,
-								resolve_target: None,
-								load_op: wgpu::LoadOp::Clear,
-								store_op: wgpu::StoreOp::Store,
-								clear_color: wgpu::Color::BLACK,
-							}],
-							depth_stencil_attachment: None,
-						}
-					);
-					rpass.set_pipeline(&render_pipeline);
-					rpass.set_bind_group(0, &bind_group, &[]);
-					rpass.draw(0..4, 0..1);
-				}
-				let mut encoder2 =
-					device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-				{
-					let now = Instant::now();
-					let time = now - past;
-					past = now;
-					let fps = (1.0 / time.as_secs_f32()).round() as usize;
-
-					let number_section = Section {
-						text: &format!("{}", fps),
-						screen_position: (size.width as f32 / 100.0, size.height as f32 / 100.0),
-						scale: Scale::uniform(32.0),
-						color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
-						..Section::default() // color, position, etc
-					};
-
-					let mut number_section_outline = number_section;
-					number_section_outline.color = [0.0f32, 0.0f32, 0.0f32, 1.0f32];
-					number_section_outline.scale = Scale::uniform(38.0);
-					number_section_outline.screen_position.0 -= 3.0f32;
-					number_section_outline.screen_position.1 -= 3.0f32;
-
-					let fps_section = Section {
-						text: "fps",
-						screen_position: (size.width as f32 / 100.0 + 16.0 * fps.count_digits() as f32, size.height as f32 / 100.0),
-						scale: Scale::uniform(32.0),
-						color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
-						..Section::default() // color, position, etc
-					};
-
-					let mut fps_section_outline = fps_section;
-					fps_section_outline.color = [0.0f32, 0.0f32, 0.0f32, 1.0f32];
-					fps_section_outline.scale = Scale::uniform(38.0);
-					fps_section_outline.screen_position.0 -= 3.0f32;
-					fps_section_outline.screen_position.1 -= 3.0f32;
-
-					glyph_brush.queue(fps_section_outline);
-					glyph_brush.queue(fps_section);
-					glyph_brush.queue(number_section_outline);
-					glyph_brush.queue(number_section);
-
-					glyph_brush.draw_queued(
-						&mut device,
-						&mut encoder2,
-						&frame.view,
-						size.width.round() as u32,
-						size.height.round() as u32,
-					).expect("error drawing text");
-				}
-
-				queue.submit(&[encoder1.finish(), encoder2.finish()]);
+				);
+				rpass.set_pipeline(&render_pipeline.lock().unwrap());
+				rpass.set_bind_group(0, &bind_group.lock().unwrap(), &[]);
+				rpass.draw(0..4, 0..1);
 			}
-			_ => (),
-		}
-	});
+			let mut encoder2 =
+				device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+			{
+				let now = Instant::now();
+				let time = now - past;
+				past = now;
+				let fps = (1.0 / time.as_secs_f32()).round() as usize;
+
+				let number_section = Section {
+					text: &format!("{}", fps),
+					screen_position: (size.width as f32 / 100.0, size.height as f32 / 100.0),
+					scale: Scale::uniform(32.0),
+					color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
+					..Section::default() // color, position, etc
+				};
+
+				let mut number_section_outline = number_section;
+				number_section_outline.color = [0.0f32, 0.0f32, 0.0f32, 1.0f32];
+				number_section_outline.scale = Scale::uniform(38.0);
+				number_section_outline.screen_position.0 -= 3.0f32;
+				number_section_outline.screen_position.1 -= 3.0f32;
+
+				let fps_section = Section {
+					text: "fps",
+					screen_position: (size.width as f32 / 100.0 + 16.0 * fps.count_digits() as f32, size.height as f32 / 100.0),
+					scale: Scale::uniform(32.0),
+					color: [1.0f32, 1.0f32, 1.0f32, 1.0f32],
+					..Section::default() // color, position, etc
+				};
+
+				let mut fps_section_outline = fps_section;
+				fps_section_outline.color = [0.0f32, 0.0f32, 0.0f32, 1.0f32];
+				fps_section_outline.scale = Scale::uniform(38.0);
+				fps_section_outline.screen_position.0 -= 3.0f32;
+				fps_section_outline.screen_position.1 -= 3.0f32;
+
+				glyph_brush.queue(fps_section_outline);
+				glyph_brush.queue(fps_section);
+				glyph_brush.queue(number_section_outline);
+				glyph_brush.queue(number_section);
+
+				glyph_brush.draw_queued(
+					&mut device.lock().unwrap(),
+					&mut encoder2,
+					&frame.view,
+					size.width.round() as u32,
+					size.height.round() as u32,
+				).expect("error drawing text");
+			}
+
+			queue.lock().unwrap().submit(&[encoder1.finish(), encoder2.finish()]);
+		}))
+	};
+
+	{
+		let rx = Arc::clone(&rx);
+		let fs = Arc::clone(&fs);
+		let fs_module = Arc::clone(&fs_module);
+		let render_pipeline = Arc::clone(&render_pipeline);
+		let device = Arc::clone(&device);
+		let window = Arc::clone(&window);
+		let render = Arc::clone(&render);
+
+		thread::spawn(move || {
+			log::info!("Shader watcher thread spawned");
+			loop {
+				if let Ok(notify::DebouncedEvent::Write(..)) = rx.lock().unwrap().recv() {
+					log::info!("Write event in fragment shader");
+					window.lock().unwrap().set_title("Loading shader.frag...");
+					*fs.lock().unwrap() = load_fs().unwrap();
+					*fs_module.lock().unwrap() = load_fs_module(Arc::clone(&device), &Arc::clone(&fs).lock().unwrap());
+					*render_pipeline.lock().unwrap() = create_render_pipeline_multithreaded(Arc::clone(&device), Arc::clone(&fs_module));
+					render.lock().unwrap().deref_mut()();
+					window.lock().unwrap().set_title(TITLE);
+				};
+			}
+		});
+	}
+	{
+		let render = Arc::clone(&render);
+		event_loop.run(move |event, _, control_flow| {
+			*control_flow = if cfg!(feature = "metal-auto-capture") {
+				ControlFlow::Exit
+			} else {
+				ControlFlow::Poll
+			};
+			match event {
+				event::Event::WindowEvent { event, .. } => match event {
+					event::WindowEvent::Resized(size) => {
+						let physical = size.to_physical(hidpi_factor);
+						log::info!("Resizing to {:?}", physical);
+						if physical.width == 0. || physical.height == 0. {
+							return;
+						}
+						sc_desc.width = physical.width.round() as u32;
+						sc_desc.height = physical.height.round() as u32;
+						*swap_chain.lock().unwrap() = device.lock().unwrap().create_swap_chain(&surface, &sc_desc);
+
+						window_size.size = [physical.width as f32, physical.height as f32];
+
+						let temp_buf = device.lock().unwrap().create_buffer_mapped(
+							1,
+							wgpu::BufferUsage::COPY_SRC
+						).fill_from_slice(&[window_size]);
+
+						let mut encoder =
+							device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+						encoder.copy_buffer_to_buffer(
+							&temp_buf,
+							0,
+							&window_size_buf,
+							0,
+							window_size_size
+						);
+
+						let command_buf = encoder.finish();
+						queue.lock().unwrap().submit(&[command_buf]);
+					}
+					event::WindowEvent::CursorLeft { .. } => {
+						log::info!("Cursor left screen");
+						is_cursor_on_screen = false;
+					}
+					event::WindowEvent::CursorEntered { .. } => {
+						log::info!("Cursor back on screen");
+						is_cursor_on_screen = true;
+					}
+					event::WindowEvent::CursorMoved {
+						position: winit::dpi::LogicalPosition {
+							x, y
+						},
+						..
+					} => {
+						if is_left_button_pressed && is_cursor_on_screen {
+							if !first_drag_pos_received {
+								prev_position.pos = [x as f32, y as f32];
+								first_drag_pos_received = true;
+							}
+							log::info!("Initial: {:?} Current: {:?},{:?}", prev_position, x, y);
+							let delta_x = x as f32 - prev_position.pos[0];
+							let delta_y = y as f32 - prev_position.pos[1];
+
+							prev_position.pos = [x as f32, y as f32];
+							log::info!("Deltas, x: {:?}; y: {:?}", delta_x, delta_y);
+							pos.pos[0] += delta_x * zoom.zoom;
+							pos.pos[1] += delta_y * zoom.zoom;
+
+							log::info!("New position: {:?}", pos);
+						}
+
+						let temp_buf = device.lock().unwrap().create_buffer_mapped(
+							1,
+							wgpu::BufferUsage::COPY_SRC
+						).fill_from_slice(&[pos]);
+
+						let mut encoder =
+							device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+						encoder.copy_buffer_to_buffer(
+							&temp_buf,
+							0,
+							&position_buf,
+							0,
+							pos_size
+						);
+
+						let command_buf = encoder.finish();
+						queue.lock().unwrap().submit(&[command_buf]);
+					}
+					event::WindowEvent::MouseInput {
+						button,
+						state,
+						..
+					} => {
+						if button != event::MouseButton::Left {
+							return;
+						}
+						match state {
+							event::ElementState::Pressed => {
+								log::info!("Pressed left mouse button.");
+								is_left_button_pressed = true;
+								first_drag_pos_received = false;
+							}
+							event::ElementState::Released => {
+								log::info!("Released left mouse button.");
+								is_left_button_pressed = false;
+							}
+						}
+					}
+					event::WindowEvent::MouseWheel {
+						delta,
+						..
+					} => {
+						let y_delta = {
+							match delta {
+								event::MouseScrollDelta::LineDelta(_, y) => {
+									y
+								}
+								event::MouseScrollDelta::PixelDelta(pos) => {
+									pos.y as f32
+								}
+							}
+						};
+						log::info!("MouseWheel moved delta: {:?}", y_delta);
+						// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
+						zoom.zoom *= (ZOOM_SENSITIVITY as f32).powi(y_delta.signum() as i32);
+
+						log::info!("Zoom now of value: {:?}", zoom.zoom);
+
+						let temp_buf = device.lock().unwrap().create_buffer_mapped(
+							1,
+							wgpu::BufferUsage::COPY_SRC
+						).fill_from_slice(&[zoom]);
+
+						let mut encoder =
+							device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+						encoder.copy_buffer_to_buffer(
+							&temp_buf,
+							0,
+							&zoom_buf,
+							0,
+							zoom_size
+						);
+
+						let command_buf = encoder.finish();
+						queue.lock().unwrap().submit(&[command_buf]);
+					}
+					event::WindowEvent::KeyboardInput {
+						input:
+						event::KeyboardInput {
+							virtual_keycode: Some(event::VirtualKeyCode::Escape),
+							state: event::ElementState::Pressed,
+							..
+						},
+						..
+					}
+					| event::WindowEvent::CloseRequested => {
+						*control_flow = ControlFlow::Exit;
+					}
+					event::WindowEvent::KeyboardInput {
+						input: event::KeyboardInput {
+							virtual_keycode: Some(key),
+							state: event::ElementState::Pressed,
+							..
+						},
+						..
+					} => {
+						match key {
+							VirtualKeyCode::F12 => {
+								is_full_screen = !is_full_screen;
+								let video_mode = window.lock().unwrap().current_monitor().video_modes().next().unwrap();
+								if is_full_screen {
+									window.lock().unwrap().set_fullscreen(Some(Fullscreen::Exclusive(video_mode)));
+								} else {
+									window.lock().unwrap().set_fullscreen(None);
+								}
+							},
+							VirtualKeyCode::Numpad1 | VirtualKeyCode::Key1 => {}
+							_ => ()
+						}
+					}
+					event::WindowEvent::HiDpiFactorChanged(hdpif) => {
+						hidpi_factor = hdpif;
+					}
+					_ => {}
+				},
+				event::Event::EventsCleared => {
+					render.lock().unwrap().deref_mut()();
+				}
+				_ => (),
+			}
+		});
+	}
 }
