@@ -74,20 +74,20 @@ lazy_static! {
 fn main() {
 	env_logger::init();
 
-	let load_fs = move || -> Result<Vec<u32>, std::io::Error> {
-		log::info!("Loading fragment shader");
-		let mut buffer = String::new();
-		let mut f = File::open(&*FRAG_SHADER_PATH)?;
-		f.read_to_string(&mut buffer)?;
+let load_fs = move || -> Result<Vec<u32>, std::io::Error> {
+	log::info!("Loading fragment shader");
+	let mut buffer = String::new();
+	let mut f = File::open(&*FRAG_SHADER_PATH)?;
+	f.read_to_string(&mut buffer)?;
 
-		// Load fragment shader
-		wgpu::read_spirv(
-			glsl_to_spirv::compile(
-				&buffer,
-				glsl_to_spirv::ShaderType::Fragment
-			).expect("Compilation failed")
-		)
-	};
+	// Load fragment shader
+	wgpu::read_spirv(
+		glsl_to_spirv::compile(
+			&buffer,
+			glsl_to_spirv::ShaderType::Fragment
+		).expect("Compilation failed")
+	)
+};
 	let fs = load_fs().expect("error loading fs");
 
 	let event_loop = EventLoop::new();
@@ -482,7 +482,13 @@ fn main() {
 				ControlFlow::Poll
 			};
 			match event {
-				event::Event::WindowEvent { event, .. } => match event {
+				event::Event::WindowEvent {
+					event,
+					..
+				} => match event {
+					event::WindowEvent::RedrawRequested => {
+						render.lock().unwrap()();
+					}
 					event::WindowEvent::Resized(size) => {
 						let physical = size.to_physical(hidpi_factor);
 						log::info!("Resizing to {:?}", physical);
@@ -663,7 +669,7 @@ fn main() {
 					_ => {}
 				},
 				event::Event::EventsCleared => {
-					render.lock().unwrap().deref_mut()();
+					window.lock().unwrap().request_redraw();
 				}
 				_ => (),
 			}
