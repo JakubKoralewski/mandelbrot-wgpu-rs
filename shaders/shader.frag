@@ -24,18 +24,6 @@ vec2 square(vec2 z) {
 
 float iterations(vec2 c, float zoom) {
     vec2 z = c;
-    float y_2 = pow(z.y, 2);
-    float q = pow(z.x - 1/4, 2) + y_2;
-    float cardioid = q * (q + (z.x - 1/4));
-    bool in_cardioid = cardioid <= y_2/4;
-    if (!in_cardioid) {
-        return 0.0;
-    }
-    float period2bulb = pow(z.x + 1, 2) + y_2;
-    bool in_period2bulb = period2bulb <= 1/16;
-    if (in_period2bulb) {
-        return 0.0;
-    }
     for (int i = 0; i < 500; i++) {
         z = square(z) + c;
         float len = length(z);
