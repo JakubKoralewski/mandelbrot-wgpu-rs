@@ -1,7 +1,7 @@
 #version 450
 precision highp float;
 
-float r = pow(2.0, 3.0);
+float r = 8;
 float log_r = log(r);
 
 layout(set = 0, binding = 0) uniform WindowSize { // https://github.com/gfx-rs/wgpu-rs/blob/v0.4/examples/shadow/forward.frag
@@ -24,10 +24,10 @@ vec2 square(vec2 z) {
 
 float iterations(vec2 c, float zoom) {
     vec2 z = c;
-    for (int i = 0; i < 500; i++) {
+    for (int i = 0; i < 800; i++) {
         z = square(z) + c;
         float len = length(z);
-        if (len > r) return float(i) - log(len) / log_r;
+        if (len > r) return float(i) - log(len)/log_r;
     }
     return 0.0;
 }
@@ -47,9 +47,10 @@ vec4 hslToRgba(float h, float s, float l) {
 }
 
 vec4 color(float it) {
-    if (it == 0.0) return vec4(0, 1, 0, 1);
+    if (it == 0.0) return vec4(0, 0, 0, 1);
     float l = min(1.0, (800.0 - it) / 50.0);
-    return hslToRgba(0.0, 0.0, l * cos(3.141592 * log(it)));
+    return hslToRgba(it / 240.0, 1.0, l * .5);
+//    return hslToRgba(0.0, 0.0, l * cos(3.141592 * log(it)));
 }
 
 void main() {
