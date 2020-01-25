@@ -2,7 +2,6 @@ extern crate winit;
 extern crate wgpu;
 extern crate env_logger;
 extern crate log;
-extern crate image;
 #[macro_use]
 extern crate lazy_static;
 
@@ -43,16 +42,6 @@ impl DigitsCountable for usize {
 	}
 }
 lazy_static! {
-	static ref ICON: winit::window::Icon = {
-		let icon_image =
-			image::load_from_memory_with_format(
-				include_bytes!("../res/gta_sa.ico"),
-				image::ImageFormat::ICO
-			).expect("Error decoding icon");
-
-		winit::window::Icon::from_rgba(icon_image.raw_pixels(), 256, 256)
-			.expect("Error creating Icon in winit")
-	};
 	/// Load vertex shader
 	static ref VS: Vec<u32> = wgpu::read_spirv(
 		glsl_to_spirv::compile(
@@ -68,6 +57,17 @@ lazy_static! {
 
 		log::info!("Frag shader path: {:?}", frag_shader_path_buf);
 		frag_shader_path_buf
+	};
+	static ref ICON: winit::window::Icon = {
+		use std::io::Read;
+		let mut icon_file_path = ABSOLUTE_PATH.clone();
+		icon_file_path.push::<PathBuf>(["res", "gta_sa_icon"].iter().collect());
+
+		let mut icon_file = File::open(icon_file_path).unwrap();
+		let mut raw_pixels = Vec::new();
+		icon_file.read_to_end(&mut raw_pixels).unwrap();
+			winit::window::Icon::from_rgba(raw_pixels, 256, 256)
+				.expect("Error creating Icon in winit")
 	};
 }
 

@@ -3,6 +3,7 @@ name = "example_triangle"
 version = "0.1.0"
 authors = ["Jakub Koralewski\\ <contact@jcubed.me>"]
 edition = "2018"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,5 +15,8 @@ glsl-to-spirv = "0.1"
 log = "0.4"
 notify = "4.0.15"
 wgpu_glyph = "0.6.0"
-image = "0.22.4"
 lazy_static = "1.4.0"
+
+[build-dependencies]
+image = "0.22.4"
+winit = "0.20.0-alpha4"
