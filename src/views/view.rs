@@ -5,7 +5,8 @@ use crate::utils::{
 	AtomicDevice, AtomicWindow,
 	Position, POSITION_SIZE,
 	Zoom, ZOOM_SIZE,
-	WindowSize, WINDOW_SIZE_SIZE
+	WindowSize, WINDOW_SIZE_SIZE,
+	Iterations, ITERATIONS_SIZE
 };
 
 use super::utils::{ZOOM_SENSITIVITY};
@@ -19,6 +20,7 @@ pub struct Buffers {
 	pub window_size: wgpu::Buffer,
 	pub position: wgpu::Buffer,
 	pub zoom: wgpu::Buffer,
+	pub iterations: wgpu::Buffer
 }
 
 pub struct FractalViewData {
@@ -37,6 +39,7 @@ pub struct FractalViewData {
 	pub first_drag_pos_received: bool,
 	pub left_button_pressed: bool,
 	pub zoom: Zoom,
+	pub iterations: Iterations,
 }
 
 impl FractalViewData {
@@ -143,6 +146,37 @@ pub trait FractalViewable {
 				self.data().left_button_pressed = false;
 			}
 		}
+	}
+
+	fn iterations(&mut self, device: &AtomicDevice, y_delta: f32) -> wgpu::CommandBuffer {
+		let mut iterations = self.data().iterations;
+
+		iterations.iterations *= 0.99_f32.powi(y_delta.signum() as i32);
+		if iterations.iterations < 0.0 {
+			iterations.iterations = 0.0;
+		} else if iterations.iterations > 200.0 {
+			iterations.iterations = 200.0;
+		}
+		log::info!("Iterations: {:#?}", iterations);
+		self.data().iterations = iterations;
+
+		let temp_buf = device.lock().unwrap().create_buffer_mapped(
+			1,
+			wgpu::BufferUsage::COPY_SRC
+		).fill_from_slice(&[iterations]);
+
+		let mut encoder =
+			device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+		encoder.copy_buffer_to_buffer(
+			&temp_buf,
+			0,
+			&self.data().bufs.iterations,
+			0,
+			*ITERATIONS_SIZE
+		);
+
+		encoder.finish()
 	}
 
 	fn zoom(&mut self, device: &AtomicDevice, y_delta: f32) -> wgpu::CommandBuffer {

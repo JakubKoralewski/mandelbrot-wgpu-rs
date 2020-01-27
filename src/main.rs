@@ -279,6 +279,7 @@ fn main() {
 				}
 				event::WindowEvent::MouseWheel {
 					delta,
+					modifiers,
 					..
 				} => {
 					let y_delta = {
@@ -291,12 +292,19 @@ fn main() {
 							}
 						}
 					};
+
 					log::info!("MouseWheel moved delta: {:?}", y_delta);
-					// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
-					let command_buf = view.lock().unwrap().zoom(&device, y_delta);
+					let command_buf: CommandBuffer;
+					if modifiers.alt {
+						command_buf = view.lock().unwrap().iterations(&device, y_delta);
+						changed.lock().unwrap().set(true, "iterations");
+					} else {
+						// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
+						command_buf = view.lock().unwrap().zoom(&device, y_delta);
+						changed.lock().unwrap().set(true, "zoom");
+					}
 
 					queue.lock().unwrap().submit(&[command_buf]);
-					changed.lock().unwrap().set(true, "zoom");
 				}
 				event::WindowEvent::KeyboardInput {
 					input:

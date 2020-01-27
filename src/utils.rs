@@ -8,6 +8,7 @@ lazy_static! {
 	pub(crate) static ref WINDOW_SIZE_SIZE: wgpu::BufferAddress = std::mem::size_of::<WindowSize>() as wgpu::BufferAddress;
 	pub(crate) static ref ZOOM_SIZE: wgpu::BufferAddress = std::mem::size_of::<Zoom>() as wgpu::BufferAddress;
 	pub(crate) static ref POSITION_SIZE: wgpu::BufferAddress = std::mem::size_of::<Position>() as wgpu::BufferAddress;
+	pub(crate) static ref ITERATIONS_SIZE: wgpu::BufferAddress = std::mem::size_of::<Iterations>() as wgpu::BufferAddress;
 }
 
 pub(crate) type AtomicDevice = Arc<Mutex<wgpu::Device>>;
@@ -25,6 +26,20 @@ pub struct WindowSize {
 #[derive(Clone, Copy)]
 pub struct Zoom {
 	pub zoom: f32
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Iterations {
+	pub iterations: f32
+}
+
+impl Default for Iterations {
+	fn default() -> Self {
+		Self {
+			iterations: 100.0
+		}
+	}
 }
 
 impl Default for Zoom {

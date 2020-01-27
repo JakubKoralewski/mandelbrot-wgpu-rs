@@ -16,6 +16,10 @@ layout(set = 0, binding = 2) uniform Pos {
     vec2 pos;
 };
 
+layout(set = 0, binding = 3) uniform Iterations {
+    float num_iters;
+};
+
 layout(location = 0) out vec4 outColor;
 
 vec2 square(vec2 z) {
@@ -24,7 +28,7 @@ vec2 square(vec2 z) {
 
 float iterations(vec2 c, float zoom) {
     vec2 z = c;
-    for (int i = 0; i < 53; i++) {
+    for (int i = 0; i < num_iters; i++) {
         z = square(z) + c;
         float len = length(z);
         if (len > r) return float(i) - log(len)/log_r;

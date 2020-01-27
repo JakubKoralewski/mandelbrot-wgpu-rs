@@ -12,7 +12,12 @@ use crate::views::utils::{
 	create_buffer
 };
 
-use crate::utils::{ABSOLUTE_PATH, Position, POSITION_SIZE, WindowSize, WINDOW_SIZE_SIZE, Zoom, ZOOM_SIZE};
+use crate::utils::{
+	ABSOLUTE_PATH, Position, POSITION_SIZE,
+	WindowSize, WINDOW_SIZE_SIZE,
+	Zoom, ZOOM_SIZE,
+	Iterations, ITERATIONS_SIZE
+};
 use views::view::Buffers;
 use notify::{RecommendedWatcher, DebouncedEvent};
 
@@ -50,16 +55,16 @@ impl FractalViewable for MandelbrotOnlyView {
 		let window_size = WindowSize {
 			size: [size.width as f32, size.height as f32]
 		};
-
 		let window_size_buf = create_buffer(&device, window_size);
 
 		let zoom = Zoom::default();
-
 		let zoom_buf = create_buffer(&device, zoom);
 
 		let pos = Position::default();
-
 		let position_buf = create_buffer(&device, pos);
+
+		let iterations = Iterations::default();
+		let iterations_buf = create_buffer(&device, iterations);
 
 		let bind_group_layout =
 			device.create_bind_group_layout(
@@ -81,6 +86,13 @@ impl FractalViewable for MandelbrotOnlyView {
 						},
 						wgpu::BindGroupLayoutBinding {
 							binding: 2,
+							visibility: wgpu::ShaderStage::FRAGMENT,
+							ty: wgpu::BindingType::UniformBuffer {
+								dynamic: false
+							}
+						},
+						wgpu::BindGroupLayoutBinding {
+							binding: 3,
 							visibility: wgpu::ShaderStage::FRAGMENT,
 							ty: wgpu::BindingType::UniformBuffer {
 								dynamic: false
@@ -113,6 +125,13 @@ impl FractalViewable for MandelbrotOnlyView {
 						resource: wgpu::BindingResource::Buffer {
 							buffer: &position_buf,
 							range: 0..*POSITION_SIZE
+						}
+					},
+					wgpu::Binding {
+						binding: 3,
+						resource: wgpu::BindingResource::Buffer {
+							buffer: &iterations_buf,
+							range: 0..*ITERATIONS_SIZE
 						}
 					},
 				],
@@ -173,7 +192,8 @@ impl FractalViewable for MandelbrotOnlyView {
 				bufs: Buffers {
 					window_size: window_size_buf,
 					position: position_buf,
-					zoom: zoom_buf
+					zoom: zoom_buf,
+					iterations: iterations_buf
 				},
 				vs_module: Arc::new(vs_module),
 				pipeline_layout: Arc::new(pipeline_layout),
@@ -184,7 +204,8 @@ impl FractalViewable for MandelbrotOnlyView {
 				prev_position: Position::default(),
 				first_drag_pos_received: false,
 				left_button_pressed: false,
-				zoom
+				zoom,
+				iterations: Iterations::default()
 			},
 		})
 	}
