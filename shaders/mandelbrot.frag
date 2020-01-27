@@ -24,7 +24,7 @@ vec2 square(vec2 z) {
 
 float iterations(vec2 c, float zoom) {
     vec2 z = c;
-    for (int i = 0; i < 800; i++) {
+    for (int i = 0; i < 53; i++) {
         z = square(z) + c;
         float len = length(z);
         if (len > r) return float(i) - log(len)/log_r;
@@ -50,7 +50,6 @@ vec4 color(float it) {
     if (it == 0.0) return vec4(0, 0, 0, 1);
     float l = min(1.0, (800.0 - it) / 50.0);
     return hslToRgba(it / 240.0, 1.0, l * .5);
-//    return hslToRgba(0.0, 0.0, l * cos(3.141592 * log(it)));
 }
 
 void main() {
