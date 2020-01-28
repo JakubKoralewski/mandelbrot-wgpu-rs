@@ -1,2 +1,2 @@
 mod mandelbrot;
-pub use self::mandelbrot::MandelbrotOnlyView;
+pub use self::mandelbrot::MandelbrotViewManager;

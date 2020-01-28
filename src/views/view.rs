@@ -1,30 +1,30 @@
-use std::path::{PathBuf, Path};
-use std::sync::{Arc, Mutex, atomic::AtomicBool, mpsc};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use crate::utils::{
-	AtomicDevice, AtomicWindow,
+	AtomicDevice,
 	Position, POSITION_SIZE,
 	Zoom, ZOOM_SIZE,
 	WindowSize, WINDOW_SIZE_SIZE,
-	Iterations, ITERATIONS_SIZE
+	Iterations, ITERATIONS_SIZE,
+	VERTEX_SIZE,
+	Julia, JULIA_SIZE
 };
 
-use super::utils::{ZOOM_SENSITIVITY};
+use super::utils::ZOOM_SENSITIVITY;
 use std::ops::Deref;
-use std::fs::File;
-use std::io::Read;
-use std::sync::atomic::Ordering;
-use notify::RecommendedWatcher;
 
 pub struct Buffers {
 	pub window_size: wgpu::Buffer,
 	pub position: wgpu::Buffer,
 	pub zoom: wgpu::Buffer,
-	pub iterations: wgpu::Buffer
+	pub iterations: wgpu::Buffer,
+	pub vertex: wgpu::Buffer,
+	pub julia: wgpu::Buffer,
+	pub generator: wgpu::Buffer,
 }
 
 pub struct FractalViewData {
-	//	pub frag_file_change_receiver: mpsc::Receiver<notify::DebouncedEvent>,
 	pub frag_shader_module: Arc<Mutex<wgpu::ShaderModule>>,
 	pub render_pipeline: Arc<Mutex<wgpu::RenderPipeline>>,
 	pub bind_group: Arc<Mutex<wgpu::BindGroup>>,
@@ -32,8 +32,6 @@ pub struct FractalViewData {
 	pub vs_module: Arc<wgpu::ShaderModule>,
 	pub pipeline_layout: Arc<wgpu::PipelineLayout>,
 
-	//	is_left_button_pressed: AtomicBool,
-//	is_cursor_on_screen: AtomicBool,
 	pub prev_position: Position,
 	pub pos: Position,
 	pub first_drag_pos_received: bool,
@@ -48,11 +46,92 @@ impl FractalViewData {
 	}
 }
 
+pub trait FractalViewManager {
+	fn new(device: &wgpu::Device, size: winit::dpi::LogicalSize) -> Self;
+
+	fn render(
+		&mut self,
+		device: &AtomicDevice,
+		frame: &wgpu::SwapChainOutput,
+	) -> Vec<wgpu::CommandBuffer>;
+
+	fn resized(
+		&mut self,
+		device: &AtomicDevice,
+		window_size: &WindowSize
+	) -> Vec<wgpu::CommandBuffer>;
+
+	fn load_fs(path: &Path) -> Option<Vec<u32>> {
+		log::info!("Loading fragment shader {:?}", path);
+		let buffer = std::fs::read_to_string(
+			path
+		).unwrap();
+
+		let spirv = glsl_to_spirv::compile(
+			&buffer,
+			glsl_to_spirv::ShaderType::Fragment
+		);
+		match spirv {
+			Ok(spirv) => {
+				// Load fragment shader
+				Some(wgpu::read_spirv(spirv).unwrap())
+			}
+			Err(err) => {
+				log::error!("Spirv compilation error: {:?}", err);
+				None
+			}
+		}
+	}
+
+	fn mouse_input(&mut self, button: winit::event::MouseButton, state: winit::event::ElementState);
+
+	fn iterations(&mut self, device: &AtomicDevice, y_delta: f32) -> Vec<wgpu::CommandBuffer>;
+
+	fn set_julia(&mut self, device: &AtomicDevice, state: bool) -> Option<Vec<wgpu::CommandBuffer>>;
+
+	fn zoom(&mut self, device: &AtomicDevice, y_delta: f32) -> Vec<wgpu::CommandBuffer>;
+
+	fn new_position(&mut self, device: &AtomicDevice, x: f32, y: f32, active: bool) -> Option<Vec<wgpu::CommandBuffer>>;
+
+	fn create_render_pipeline(&mut self, device: &wgpu::Device);
+
+	fn reload_fs(&mut self, device: &AtomicDevice);
+}
+
+
 pub trait FractalViewable {
-	fn new(device: &wgpu::Device, size: winit::dpi::PhysicalSize) -> (RecommendedWatcher, mpsc::Receiver<notify::DebouncedEvent>, Self);
+	fn new(device: &wgpu::Device, size: winit::dpi::LogicalSize) -> Self;
 
 	fn data(&mut self) -> &mut FractalViewData;
 
+	fn render(
+		&mut self,
+		device: &AtomicDevice,
+		frame: &wgpu::SwapChainOutput,
+	) -> wgpu::CommandBuffer {
+		let mut encoder =
+			device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+		{
+			let mut rpass = encoder.begin_render_pass(
+				&wgpu::RenderPassDescriptor {
+					color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+						attachment: &frame.view,
+						resolve_target: None,
+						load_op: wgpu::LoadOp::Load,
+						store_op: wgpu::StoreOp::Store,
+						clear_color: wgpu::Color::BLACK
+					}],
+					depth_stencil_attachment: None,
+				}
+			);
+			rpass.set_pipeline(self.data().render_pipeline.lock().unwrap().deref());
+			rpass.set_bind_group(0, self.data().bind_group.lock().unwrap().deref(), &[]);
+			rpass.set_vertex_buffers(0, &[(&self.data().bufs.vertex, 0)]);
+			rpass.draw(0..4, 0..1);
+		}
+
+		encoder.finish()
+	}
 	fn resized(
 		&mut self,
 		device: &AtomicDevice,
@@ -77,44 +156,19 @@ pub trait FractalViewable {
 		encoder.finish()
 	}
 
-	fn render(
-		&mut self,
-		device: &AtomicDevice,
-		frame: &wgpu::SwapChainOutput,
-	) -> wgpu::CommandBuffer {
-		let mut encoder =
-			device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-		{
-			let mut rpass = encoder.begin_render_pass(
-				&wgpu::RenderPassDescriptor {
-					color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-						attachment: &frame.view,
-						resolve_target: None,
-						load_op: wgpu::LoadOp::Clear,
-						store_op: wgpu::StoreOp::Store,
-						clear_color: wgpu::Color::BLACK,
-					}],
-					depth_stencil_attachment: None,
-				}
-			);
-			rpass.set_pipeline(self.data().render_pipeline.lock().unwrap().deref());
-			rpass.set_bind_group(0, self.data().bind_group.lock().unwrap().deref(), &[]);
-			rpass.draw(0..4, 0..1);
-		}
 
-		encoder.finish()
-	}
+//	fn render(
+//		&mut self,
+//		device: &AtomicDevice,
+//		frame: &wgpu::SwapChainOutput,
+//	) -> wgpu::CommandBuffer;
 
 	fn load_fs(path: &Path) -> Option<Vec<u32>> {
 		log::info!("Loading fragment shader {:?}", path);
-//		let mut buffer = String::new();
-//		let mut f = File::open(path).unwrap();
-//		f.read_to_string(&mut buffer).unwrap();
 		let buffer = std::fs::read_to_string(
 			path
 		).unwrap();
 
-//		log::info!("Reading:\n{:?}", buffer);
 		let spirv = glsl_to_spirv::compile(
 			&buffer,
 			glsl_to_spirv::ShaderType::Fragment
@@ -151,11 +205,11 @@ pub trait FractalViewable {
 	fn iterations(&mut self, device: &AtomicDevice, y_delta: f32) -> wgpu::CommandBuffer {
 		let mut iterations = self.data().iterations;
 
-		iterations.iterations *= 0.99_f32.powi(y_delta.signum() as i32);
+		iterations.iterations *= 0.99f32.powi(y_delta.signum() as i32);
 		if iterations.iterations < 0.0 {
 			iterations.iterations = 0.0;
-		} else if iterations.iterations > 200.0 {
-			iterations.iterations = 200.0;
+		} else if iterations.iterations > 800.0 {
+			iterations.iterations = 800.0;
 		}
 		log::info!("Iterations: {:#?}", iterations);
 		self.data().iterations = iterations;
@@ -174,6 +228,27 @@ pub trait FractalViewable {
 			&self.data().bufs.iterations,
 			0,
 			*ITERATIONS_SIZE
+		);
+
+		encoder.finish()
+	}
+
+	fn set_julia(&mut self, device: &AtomicDevice, state: bool) -> wgpu::CommandBuffer {
+		log::info!("Setting is_julia to: {:?}", state);
+		let temp_buf = device.lock().unwrap().create_buffer_mapped(
+			1,
+			wgpu::BufferUsage::COPY_SRC
+		).fill_from_slice(&[Julia{is_julia: state}]);
+
+		let mut encoder =
+			device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+		encoder.copy_buffer_to_buffer(
+			&temp_buf,
+			0,
+			&self.data().bufs.julia,
+			0,
+			*JULIA_SIZE
 		);
 
 		encoder.finish()
@@ -205,9 +280,7 @@ pub trait FractalViewable {
 		encoder.finish()
 	}
 
-	fn new_position(&mut self, device: &AtomicDevice, x: f64, y: f64, active: bool) -> wgpu::CommandBuffer {
-		let x = x as f32;
-		let y = y as f32;
+	fn new_position(&mut self, device: &AtomicDevice, x: f32, y: f32, active: bool) -> Option<wgpu::CommandBuffer> {
 		let mut prev_position = self.data().prev_position;
 		let mut pos = self.data().pos;
 
@@ -222,7 +295,6 @@ pub trait FractalViewable {
 			let delta_y = y - prev_position.pos[1];
 
 			let zoom = self.data().zoom;
-//		log::info!("Deltas, x: {:?}; y: {:?}", delta_x, delta_y);
 
 			pos.pos[0] += delta_x * zoom.zoom;
 			pos.pos[1] += delta_y * zoom.zoom;
@@ -230,13 +302,17 @@ pub trait FractalViewable {
 		}
 		prev_position.pos = [x, y];
 
+		self.data().pos = pos;
+		self.data().prev_position = prev_position;
+		if !active {
+			return None;
+		}
+
 		let temp_buf = device.lock().unwrap().create_buffer_mapped(
 			1,
 			wgpu::BufferUsage::COPY_SRC
 		).fill_from_slice(&[pos]);
 
-		self.data().pos = pos;
-		self.data().prev_position = prev_position;
 
 		let mut encoder =
 			device.lock().unwrap().create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
@@ -249,7 +325,7 @@ pub trait FractalViewable {
 			*POSITION_SIZE
 		);
 
-		encoder.finish()
+		Some(encoder.finish())
 	}
 
 	fn frag_shader_path(&self) -> &'static Path;
@@ -289,7 +365,15 @@ pub trait FractalViewable {
 							}],
 							depth_stencil_state: None,
 							index_format: wgpu::IndexFormat::Uint32,
-							vertex_buffers: &[],
+							vertex_buffers: &[wgpu::VertexBufferDescriptor {
+								stride: *VERTEX_SIZE,
+								step_mode: wgpu::InputStepMode::Vertex,
+								attributes: &[wgpu::VertexAttributeDescriptor {
+									format: wgpu::VertexFormat::Float2,
+									offset: 0,
+									shader_location: 0,
+								}],
+							}],
 							sample_count: 1,
 							sample_mask: !0,
 							alpha_to_coverage_enabled: false,

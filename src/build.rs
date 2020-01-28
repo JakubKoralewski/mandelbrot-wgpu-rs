@@ -53,7 +53,8 @@ fn pre_compile_shaders() {
 			let mut shader_text = String::new();
 			let mut file = File::open(&path).unwrap();
 			file.read_to_string(&mut shader_text).unwrap();
-
+			let path_text = path.as_os_str().to_owned();
+			println!("Compiling {:?}", path_text);
 			let mut shader = glsl_to_spirv::compile(
 				&shader_text,
 				shader_type
@@ -65,7 +66,7 @@ fn pre_compile_shaders() {
 			let mut file = File::create(&path).unwrap();
 			let mut spirv = Vec::new();
 			shader.read_to_end(&mut spirv).unwrap();
-			println!("Compiled spirv {:?} of length {:?}", &path.as_os_str(), spirv.len());
+			println!("Compiled spirv {:?} of length {:?}", path_text, spirv.len());
 			file.write_all(&spirv).unwrap();
 		}
 	}

@@ -2,34 +2,40 @@ use std::path::PathBuf;
 use std::time::Instant;
 use wgpu_glyph::{Section, Scale};
 use std::sync::{mpsc, Arc, Mutex};
+use zerocopy::{AsBytes, FromBytes};
 
 lazy_static! {
-	pub(crate) static ref ABSOLUTE_PATH: PathBuf = std::env::current_dir().unwrap();
-	pub(crate) static ref WINDOW_SIZE_SIZE: wgpu::BufferAddress = std::mem::size_of::<WindowSize>() as wgpu::BufferAddress;
-	pub(crate) static ref ZOOM_SIZE: wgpu::BufferAddress = std::mem::size_of::<Zoom>() as wgpu::BufferAddress;
-	pub(crate) static ref POSITION_SIZE: wgpu::BufferAddress = std::mem::size_of::<Position>() as wgpu::BufferAddress;
-	pub(crate) static ref ITERATIONS_SIZE: wgpu::BufferAddress = std::mem::size_of::<Iterations>() as wgpu::BufferAddress;
+	pub static ref ABSOLUTE_PATH: PathBuf = std::env::current_dir().unwrap();
+	pub static ref WINDOW_SIZE_SIZE: wgpu::BufferAddress = std::mem::size_of::<WindowSize>() as wgpu::BufferAddress;
+	pub static ref ZOOM_SIZE: wgpu::BufferAddress = std::mem::size_of::<Zoom>() as wgpu::BufferAddress;
+	pub static ref POSITION_SIZE: wgpu::BufferAddress = std::mem::size_of::<Position>() as wgpu::BufferAddress;
+	pub static ref ITERATIONS_SIZE: wgpu::BufferAddress = std::mem::size_of::<Iterations>() as wgpu::BufferAddress;
+	pub static ref VERTEX_SIZE: wgpu::BufferAddress = std::mem::size_of::<Vertex>() as wgpu::BufferAddress;
+	pub static ref JULIA_SIZE: wgpu::BufferAddress = std::mem::size_of::<Julia>() as wgpu::BufferAddress;
 }
 
-pub(crate) type AtomicDevice = Arc<Mutex<wgpu::Device>>;
-//pub(crate) type AtomicReceiver = Arc<Mutex<mpsc::Receiver<notify::DebouncedEvent>>>;
-pub(crate) type AtomicWindow = Arc<Mutex<winit::window::Window>>;
-
+pub type AtomicDevice = Arc<Mutex<wgpu::Device>>;
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, AsBytes, FromBytes)]
 pub struct WindowSize {
 	pub size: [f32; 2]
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, AsBytes, FromBytes)]
 pub struct Zoom {
 	pub zoom: f32
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
+pub struct Julia {
+	pub is_julia: bool
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, AsBytes, FromBytes)]
 pub struct Iterations {
 	pub iterations: f32
 }
@@ -42,6 +48,12 @@ impl Default for Iterations {
 	}
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, AsBytes, FromBytes)]
+pub struct Vertex {
+	pub pos: [f32; 2],
+}
+
 impl Default for Zoom {
 	fn default() -> Self {
 		Self {
@@ -51,7 +63,7 @@ impl Default for Zoom {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, FromBytes)]
 pub struct Position {
 	pub pos: [f32; 2]
 }
@@ -139,4 +151,22 @@ pub fn fps_command(
 	).expect("error drawing text");
 
 	encoder.finish()
+}
+use notify::{Watcher, RecursiveMode, RecommendedWatcher};
+use std::time::Duration;
+
+pub fn create_watcher(path: &PathBuf) -> (RecommendedWatcher, mpsc::Receiver<notify::DebouncedEvent>) {
+	let (tx, rx) = mpsc::channel();
+	let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(500)).unwrap();
+
+	watcher.watch(path.clone(), RecursiveMode::NonRecursive).unwrap();
+	log::info!("Starting watcher on {:?}", path);
+
+	(watcher, rx)
+}
+
+#[derive(PartialEq)]
+pub enum CurrentView {
+	Single,
+	Double
 }
