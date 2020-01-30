@@ -1,0 +1,39 @@
+name: Rust create & push Documentation
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Create documentation
+      run: cargo doc --document-private-items --no-deps -v
+    - name: Copy docs to tmp
+      shell: bash
+      run: cp -r target/doc /tmp/docs
+
+    - uses: actions/checkout@v2
+      with:
+        ref: gh-pages
+    - name: Copy docs back to gh-pages
+      shell: bash
+      run: \cp -rf /tmp/docs cargo-docs
+    - name: Commit docs
+      shell: bash
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "Github Action Push Docs"
+        git_hash=$(git rev-parse --short "$GITHUB_SHA")
+        git_branch=${GITHUB_REF##*/}
+        git add --all
+        git commit -m "Add docs from $git_branch/$git_hash"
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: gh-pages
