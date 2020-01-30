@@ -1,0 +1,7 @@
+title: mandelbrot-wgpu-rs
+description: >
+  Mandelbrot and Julia set plotter created for Intro to Mathematics
+  classes project by Jakub Koralewski, Grzegorz Kozak and Hasan Hür.
+show_downloads: true
+google_analytics:
+theme: jekyll-theme-slate

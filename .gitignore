@@ -1,0 +1,8 @@
+_site
+.sass-cache
+Gemfile.lock
+*.gem
+target
+src
+shaders
+.jekyll-cache
