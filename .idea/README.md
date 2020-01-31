@@ -1,0 +1,1 @@
+Feel free to remove this directory. It's very useful for me, when changing between gh-pages and master.
