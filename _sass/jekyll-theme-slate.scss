@@ -312,12 +312,29 @@ Full-Width Styles
 
 #downloads {
   position: absolute;
-  width: 210px;
+  width: 300px;
   z-index: 10;
   bottom: -40px;
   right: 0;
   height: 70px;
   background: url('../images/icon_download.png') no-repeat 0% 90%;
+}
+
+.rust_docs {
+  display: block;
+  float: right;
+  width: 70px;
+  height:70px;
+  text-indent: -5000px;
+  overflow: hidden;
+  background: url(../images/rust.jpg) no-repeat;
+  background-blend-mode: darken;
+  background-size: cover;
+  margin-left: 10px;
+
+  &:hover {
+    opacity: 80%;
+  }
 }
 
 .zip_download_link {
