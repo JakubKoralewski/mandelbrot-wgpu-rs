@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["ZOOM_SENSITIVITY",""]],"fn":[["create_buffer",""],["new",""]],"static":[["LEFT_HALF_VERTICES",""],["RIGHT_HALF_VERTICES",""],["WHOLE_VERTICES",""]],"struct":[["LEFT_HALF_VERTICES",""],["RIGHT_HALF_VERTICES",""],["WHOLE_VERTICES",""]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["MandelbrotOnlyView",""],["MandelbrotViewManager",""]]});

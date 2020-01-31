@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["mandelbrot",""],["mandelbrot_and_julia",""],["prelude",""],["switchable",""],["utils",""],["view",""]]});
