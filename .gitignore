@@ -3,6 +3,6 @@ _site
 Gemfile.lock
 *.gem
 target
-src
+/src
 shaders
 .jekyll-cache
