@@ -15,14 +15,14 @@ jobs:
       run: cargo doc --document-private-items --no-deps -v
     - name: Copy docs to tmp
       shell: bash
-      run: cp -r target/doc /tmp/docs
+      run: \cp -rf target/doc /tmp/docs
 
     - uses: actions/checkout@v2
       with:
         ref: gh-pages
     - name: Copy docs back to gh-pages
       shell: bash
-      run: \cp -rf /tmp/docs cargo-docs
+      run: \cp -rf /tmp/docs docs
     - name: Commit docs
       shell: bash
       run: |
