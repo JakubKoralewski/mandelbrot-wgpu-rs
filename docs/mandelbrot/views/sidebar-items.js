@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["mandelbrot","Home of the main view -- of just the Mandelbrot set."],["mandelbrot_and_julia","Home of the split view that displays both Mandelbrot and Julia at the same time."],["prelude","Stuff that gets imported by a lot of other files."],["switchable",""],["utils","Utilities theoretically available only to children of `views`."],["view",""]]});

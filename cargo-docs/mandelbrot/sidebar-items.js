@@ -1,1 +1,0 @@
-initSidebarItems({"constant":[["TITLE",""],["ZOOM_SENSITIVITY",""]],"fn":[["main",""]],"mod":[["utils",""],["views",""]],"static":[["ICON",""]],"struct":[["ICON",""]]});
