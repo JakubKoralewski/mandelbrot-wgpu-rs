@@ -2,6 +2,8 @@
 
 Project by: Jakub Koralewski, Grzegorz Kozak, Hasan Hür
 
+https://streamable.com/duzs2
+
 ### Views
 
 1 - Mandelbrot  
@@ -10,4 +12,5 @@ Project by: Jakub Koralewski, Grzegorz Kozak, Hasan Hür
 
 ![](res/first_slide.png)
 
-https://streamable.com/duzs2
+
+[LICENSE](./LICENSE)
