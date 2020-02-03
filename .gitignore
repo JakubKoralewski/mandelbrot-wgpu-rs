@@ -4,3 +4,5 @@ Cargo.lock
 *.exe
 *.zip
 *.spv
+_site
+.jekyll-cache

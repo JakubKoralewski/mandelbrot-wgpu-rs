@@ -35,6 +35,10 @@ vec2 transform(vec2 x) {
     return zoom * (x-size/2) - pos;
 }
 
+vec2 transform_julia(vec2 x) {
+    return x;
+}
+
 vec2 pow(vec2 z, float i_pow) {
     return vec2(pow(z.x, i_pow) - pow(z.y, i_pow), i_pow * z.x *z.y);
 }
@@ -44,7 +48,8 @@ vec2 square(vec2 z) {
 }
 
 float iterations_julia(vec2 c) {
-    vec2 gen = generator;
+    vec2 gen = transform_julia(generator);
+//    vec2 gen = generator;
     vec2 z = c;
     for (int i = 0; i < num_iters; i++) {
         z = square(z) + gen;

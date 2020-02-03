@@ -1,3 +1,5 @@
+//! Blanket implementations and traits defining a view.
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -61,6 +63,7 @@ pub trait FractalViewManager {
 		window_size: &WindowSize
 	) -> Vec<wgpu::CommandBuffer>;
 
+	/// Load fragment shader.
 	fn load_fs(path: &Path) -> Option<Vec<u32>> {
 		log::info!("Loading fragment shader {:?}", path);
 		let buffer = std::fs::read_to_string(
@@ -155,13 +158,6 @@ pub trait FractalViewable {
 
 		encoder.finish()
 	}
-
-
-//	fn render(
-//		&mut self,
-//		device: &AtomicDevice,
-//		frame: &wgpu::SwapChainOutput,
-//	) -> wgpu::CommandBuffer;
 
 	fn load_fs(path: &Path) -> Option<Vec<u32>> {
 		log::info!("Loading fragment shader {:?}", path);
@@ -280,6 +276,9 @@ pub trait FractalViewable {
 		encoder.finish()
 	}
 
+	/// Returns None if `active` is false. This is needed to save the previous
+	/// position.
+	/// Otherwise, on new drags there will be jumps.
 	fn new_position(&mut self, device: &AtomicDevice, x: f32, y: f32, active: bool) -> Option<wgpu::CommandBuffer> {
 		let mut prev_position = self.data().prev_position;
 		let mut pos = self.data().pos;

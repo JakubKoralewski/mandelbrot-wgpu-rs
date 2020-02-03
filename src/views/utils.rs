@@ -1,3 +1,5 @@
+//! Utilities theoretically available only to children of `views`.
+
 pub use crate::utils::{
 	AtomicDevice,
 	ABSOLUTE_PATH, Position, POSITION_SIZE,
@@ -42,6 +44,9 @@ lazy_static! {
 }
 use super::prelude::*;
 
+/// Creates data for each `FractalViewManager`.
+/// Takes care of whether the view is a Julia set and given
+/// the `vertices` it splits the view in the right way.
 pub fn new(
 	device: &wgpu::Device,
 	size: dpi::LogicalSize,

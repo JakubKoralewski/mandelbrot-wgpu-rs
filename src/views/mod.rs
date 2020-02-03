@@ -1,3 +1,5 @@
+//! Home of view managers.
+
 mod mandelbrot;
 mod mandelbrot_and_julia;
 mod view;

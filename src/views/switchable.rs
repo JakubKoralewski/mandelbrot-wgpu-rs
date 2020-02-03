@@ -1,3 +1,6 @@
+//! `SwitchableViewManager` owns all view managers, is a view manager itself,
+//! and passes events to the manager dependent on its `current` property.
+
 use super::prelude::*;
 use super::{FractalViewManager, MandelbrotViewManager, DoubleViewManager};
 use wgpu::{Device, SwapChainOutput, CommandBuffer};

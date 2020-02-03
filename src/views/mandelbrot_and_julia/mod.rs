@@ -1,3 +1,5 @@
+//! Home of the split view that displays both Mandelbrot and Julia at the same time.
+
 mod mandelbrot;
 mod julia;
 mod double;

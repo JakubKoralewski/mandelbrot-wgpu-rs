@@ -17,11 +17,11 @@ pub struct DoubleViewManager {
 impl FractalViewManager for DoubleViewManager {
 	fn new(device: &wgpu::Device, size: winit::dpi::LogicalSize) -> Self {
 		Self {
-			left: MandelbrotDoubleView::new(device, size.clone()),
+			left: MandelbrotDoubleView::new(device, size),
 			right: JuliaDoubleView::new(device, size),
 			window_size: WindowSize{size: [size.width as f32, size.height as f32]},
 			cursor_pos: Position{pos: [size.width as f32/2f32, size.height as f32/2f32]},
-			prev_cursor_pos: Position{pos: [-100f32, -100f32]},
+			prev_cursor_pos: Position{pos: [0f32, 0f32]},
 			ever_had_pos: false,
 		}
 	}
@@ -82,25 +82,41 @@ impl FractalViewManager for DoubleViewManager {
 			}
 		} else {
 			log::info!("Sending new_position to left.");
-			let mut pos = self.left.data().pos;
+			let mut prev_position = self.left.data().prev_position;
+			if !self.ever_had_pos {
+				prev_position.pos = [x, y];
+				self.ever_had_pos = true;
+			}
 			if let Some(ok) = self.left.new_position(device, x,y, active) {
 				buf.push(ok);
+				if active {
+					self.prev_cursor_pos = self.left.data().prev_position;
+					log::info!("New position in left Mandelbrot after drag: {:?}", self.left.data().pos);
+				}
 			}
 			if !active {
-//				let mut pos = self.left.data().pos;
+				let drag_pos = self.left.data().pos;
+//				let mut pos = self.prev_cursor_pos;
 				let zoom = self.left.data().zoom;
-				if !self.ever_had_pos {
-					self.prev_cursor_pos.pos = [x, y];
-					self.ever_had_pos = true;
-				}
-				let mut prev_position = self.prev_cursor_pos;
-				let delta_x = x - prev_position.pos[0];
-				let delta_y = y - prev_position.pos[1];
+//				let mut prev_position = self.prev_cursor_pos;
+//				let delta_x = x - self.prev_cursor_pos.pos[0];
+//				let delta_y = y - self.prev_cursor_pos.pos[1];
+				let mut pos = Position {pos:[0f32, 0f32]};
+				log::info!("Prev position: {:?}; Current position: {:?}", self.prev_cursor_pos, pos);
+				log::info!("Zoom: {:?}", zoom.zoom);
 
-				let zoom = self.left.data().zoom;
+				let half_w = self.window_size.size[0] * 0.5f32;
+				let half_h = self.window_size.size[1] * 0.5f32;
 
-				pos.pos[0] += delta_x * zoom.zoom;
-				pos.pos[1] += delta_y * zoom.zoom;
+//				let drag_pos = Position {
+//					pos: [
+//						(drag_pos.pos[0] + half_w) * zoom.zoom - half_w * zoom.zoom,
+//						(half_h - drag_pos.pos[1]) * zoom.zoom + half_h * zoom.zoom
+//					]
+//				};
+
+				pos.pos[0] = (x - half_w) * zoom.zoom - drag_pos.pos[0];
+				pos.pos[1] = (half_h - y) * zoom.zoom + drag_pos.pos[1];
 
 				log::info!("Sending cursor pos {:?} to Julia", pos);
 				let temp_buf = device.lock().unwrap().create_buffer_mapped(
@@ -122,7 +138,7 @@ impl FractalViewManager for DoubleViewManager {
 				buf.push(encoder.finish());
 			}
 		}
-		if buf.len() > 0 {
+		if !buf.is_empty() {
 			Some(buf)
 		} else {
 			None

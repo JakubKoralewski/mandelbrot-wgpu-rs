@@ -1,3 +1,5 @@
+//! This file contains code that sets up the communication between the CPU and the GPU.
+
 extern crate winit;
 extern crate wgpu;
 extern crate env_logger;
@@ -32,10 +34,12 @@ use utils::fps_command;
 use wgpu::CommandBuffer;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// Window title
 pub const TITLE: &str = "Ah shit here we go again";
 pub const ZOOM_SENSITIVITY: f32 = 0.9;
 
 lazy_static! {
+	/// Gta San Andreas Icon. CJ Cameo
 	static ref ICON: winit::window::Icon = {
 		use std::io::Read;
 		let mut icon_file_path = ABSOLUTE_PATH.clone();
@@ -49,6 +53,15 @@ lazy_static! {
 	};
 }
 
+/// Main function.
+///
+/// 1. Creates a window, a surface to draw on.
+/// 2. Gets a GPU device from `wgpu`.
+/// 3. Creates the different separate views you can change to.
+/// 4. Starts watcher thread that listens to OS write events and reloads
+///    fragment shader while the program is running.
+/// 5. Starts the event loop, in which it passes user input events
+///    to the current view using the `SwitchableViewManager`.
 fn main() {
 	env_logger::init();
 
@@ -114,14 +127,14 @@ fn main() {
 	let mut sc_desc = wgpu::SwapChainDescriptor {
 		usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
 		format: render_format,
-		width: psize.width.round() as u32,
-		height: psize.height.round() as u32,
+		width: lsize.width.round() as u32,
+		height: lsize.height.round() as u32,
 		present_mode: wgpu::PresentMode::Vsync,
 	};
 	let (_watcher, frag_file_change_receiver) = create_watcher(&*FRAG_SHADER_PATH);
 
-	let single_view = MandelbrotViewManager::new(&device, lsize.clone());
-	let double_view = DoubleViewManager::new(&device, lsize.clone());
+	let single_view = MandelbrotViewManager::new(&device, lsize);
+	let double_view = DoubleViewManager::new(&device, lsize);
 
 	let swap_chain = device.create_swap_chain(
 		&surface,
@@ -172,7 +185,6 @@ fn main() {
 			loop {
 				if let Ok(notify::DebouncedEvent::Write(..)) = frag_file_change_receiver.recv() {
 					log::info!("Write event in fragment shader");
-//					let window = window.lock().unwrap();
 					window.lock().unwrap().set_title("Loading fragment shader...");
 					view.lock().unwrap().reload_fs(&device);
 					changed.lock().unwrap().set(true, "Write to shader");
@@ -183,55 +195,7 @@ fn main() {
 			}
 		});
 	}
-//	let mut render = {
-//		let device = Arc::clone(&device);
-//		let window = Arc::clone(&window);
-//		let view = Arc::clone(&single_view);
-//		let changed = Arc::clone(&changed);
-//		let please_set_title_back = Arc::clone(&please_set_title_back);
-//		let swap_chain = Arc::clone(&swap_chain);
-//		let queue = Arc::clone(&queue);
-//		let is_double = Arc::clone(&is_double);
-//		move || {
-//			log::info!("Redraw requested");
-//			let mut bufs: Vec<CommandBuffer>;
-//			if please_set_title_back.load(Ordering::SeqCst) {
-//				log::info!("Setting title back");
-//				window.lock().unwrap().set_title(TITLE);
-//				please_set_title_back.store(false, Ordering::SeqCst);
-//			}
-//			let mut swap_chain = swap_chain.lock().unwrap();
-//			let frame = swap_chain.get_next_texture();
-//			if is_double.load(Ordering::SeqCst) {
-//				log::info!("Double rendering");
-//				let buf1 = left_view.lock().unwrap().render(
-//					&device, &frame
-//				);
-//				let buf2 = right_view.lock().unwrap().render(
-//					&device, &frame
-//				);
-//				bufs = vec![buf1, buf2];
-//			} else {
-//				log::info!("Rendering single");
-//				let render_buf = view.lock().unwrap().render(
-//					&device, &frame
-//				);
-//				bufs = vec![render_buf];
-//			}
-//
-//			let fps_buf = fps_command(
-//				&device,
-//				&mut fps_glyph_brush,
-//				&size,
-//				&frame,
-//				&mut past
-//			);
-//			bufs.push(fps_buf);
-//			queue.lock().unwrap().submit(&bufs);
-//			changed.lock().unwrap().set(false, "Just rendered so false.");
-//		}
-//	};
-
+	#[allow(clippy::cognitive_complexity)] // Hard to break up
 	event_loop.run(move |event, _, control_flow| {
 		*control_flow = if cfg!(feature = "metal-auto-capture") {
 			ControlFlow::Exit
@@ -267,7 +231,7 @@ fn main() {
 					changed.lock().unwrap().set(false, "Just rendered so false.");
 				}
 				event::WindowEvent::Resized(size) => {
-					let physical = size.to_physical(hidpi_factor);
+					let physical = size; // logical xd
 					log::info!("Resizing to {:?}", physical);
 					if physical.width == 0. || physical.height == 0. {
 						return;
@@ -305,12 +269,10 @@ fn main() {
 					let command_buf: Option<Vec<CommandBuffer>>;
 					let mut current_view = current_view.lock().unwrap();
 					if is_left_button_pressed && is_cursor_on_screen {
-						log::info!("New active position: {:?}, {:?}", x, y);
 						command_buf =
 							current_view.new_position(&device, x, y, true);
 						changed.lock().unwrap().set(true, "cursor moved");
 					} else {
-						log::info!("New passive position: {:?}, {:?}", x, y);
 						command_buf =
 							current_view.new_position(&device, x, y, false);
 
@@ -359,7 +321,7 @@ fn main() {
 						command_buf = current_view.lock().unwrap().iterations(&device, y_delta);
 						changed.lock().unwrap().set(true, "iterations");
 					} else {
-// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
+						// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149
 						command_buf = current_view.lock().unwrap().zoom(&device, y_delta);
 						changed.lock().unwrap().set(true, "zoom");
 					}

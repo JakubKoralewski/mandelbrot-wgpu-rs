@@ -1,3 +1,5 @@
+//! Stuff that gets imported by a lot of other files.
+
 pub use winit::dpi;
 pub use std::path::{PathBuf, Path};
 pub use std::sync::{Arc, Mutex, mpsc};
@@ -35,12 +37,14 @@ lazy_static! {
 		log::info!("Read bytes len originally {:?}, to {:?}", bytes.len(), rs.len());
 		rs
 	};
+	/// Pre-compiled shader
 	pub static ref FRAG_SHADER_INIT: Vec<u32> = {
 		let bytes = include_bytes!("../../shaders/mandelbrot.frag.spv");
 		let mut rs = vec![0; bytes.len()/4];
 		LittleEndian::read_u32_into(bytes, &mut rs);
 		rs
 	};
+	/// Path to shader file which gets reloaded in `main`.
 	pub static ref FRAG_SHADER_PATH: PathBuf = {
 		let mut frag_shader_path_buf: PathBuf = ABSOLUTE_PATH.clone();
 		let x = ["shaders", "mandelbrot.frag"].iter().collect();

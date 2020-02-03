@@ -1,3 +1,5 @@
+//! Utility constants, structs and functions global for both `views` and the main function.
+
 use std::path::PathBuf;
 use std::time::Instant;
 use wgpu_glyph::{Section, Scale};

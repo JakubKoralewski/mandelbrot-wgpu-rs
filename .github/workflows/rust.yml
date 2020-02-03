@@ -28,10 +28,8 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "Github Action Push Docs"
-        git_hash=$(git rev-parse --short "$GITHUB_SHA")
-        git_branch=${GITHUB_REF##*/}
         git add --all
-        git commit -m "Add docs from $git_branch/$git_hash"
+        git diff --quiet && git commit -m "Add docs from https://github.com/JakubKoralewski/mandelbrot-wgpu-rs/commit/$GITHUB_SHA"
     - name: Push changes
       uses: ad-m/github-push-action@master
       with:
