@@ -22,7 +22,7 @@ jobs:
         ref: gh-pages
     - name: Copy docs back to gh-pages
       shell: bash
-      run: \cp -rf /tmp/docs docs
+      run: \cp -rf /tmp/docs .
     - name: Commit docs
       shell: bash
       run: |
