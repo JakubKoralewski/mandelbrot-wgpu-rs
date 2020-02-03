@@ -1,1 +1,1 @@
-initSidebarItems({"constant":[["TITLE",""],["ZOOM_SENSITIVITY",""]],"fn":[["main",""]],"mod":[["utils",""],["views",""]],"static":[["ICON",""]],"struct":[["ICON",""]]});
+initSidebarItems({"constant":[["TITLE","Window title"],["ZOOM_SENSITIVITY",""]],"fn":[["main","Main function."]],"mod":[["utils","Utility constants, structs and functions global for both `views` and the main function."],["views","Home of view managers."]],"static":[["ICON",""]],"struct":[["ICON","Gta San Andreas Icon. CJ Cameo"]]});

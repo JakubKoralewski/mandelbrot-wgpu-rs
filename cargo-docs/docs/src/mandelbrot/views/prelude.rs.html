@@ -51,7 +51,13 @@
 <span id="51">51</span>
 <span id="52">52</span>
 <span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Stuff that gets imported by a lot of other files.</span>
+
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">winit</span>::<span class="ident">dpi</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">path</span>::{<span class="ident">PathBuf</span>, <span class="ident">Path</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::{<span class="ident">Arc</span>, <span class="ident">Mutex</span>, <span class="ident">mpsc</span>};
@@ -89,12 +95,14 @@
 		<span class="ident">log</span>::<span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Read bytes len originally {:?}, to {:?}&quot;</span>, <span class="ident">bytes</span>.<span class="ident">len</span>(), <span class="ident">rs</span>.<span class="ident">len</span>());
 		<span class="ident">rs</span>
 	};
+	<span class="doccomment">/// Pre-compiled shader</span>
 	<span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">FRAG_SHADER_INIT</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span> <span class="op">=</span> {
 		<span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="macro">include_bytes</span><span class="macro">!</span>(<span class="string">&quot;../../shaders/mandelbrot.frag.spv&quot;</span>);
 		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rs</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="number">0</span>; <span class="ident">bytes</span>.<span class="ident">len</span>()<span class="op">/</span><span class="number">4</span>];
 		<span class="ident">LittleEndian</span>::<span class="ident">read_u32_into</span>(<span class="ident">bytes</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rs</span>);
 		<span class="ident">rs</span>
 	};
+	<span class="doccomment">/// Path to shader file which gets reloaded in `main`.</span>
 	<span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">FRAG_SHADER_PATH</span>: <span class="ident">PathBuf</span> <span class="op">=</span> {
 		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">frag_shader_path_buf</span>: <span class="ident">PathBuf</span> <span class="op">=</span> <span class="ident">ABSOLUTE_PATH</span>.<span class="ident">clone</span>();
 		<span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> [<span class="string">&quot;shaders&quot;</span>, <span class="string">&quot;mandelbrot.frag&quot;</span>].<span class="ident">iter</span>().<span class="ident">collect</span>();

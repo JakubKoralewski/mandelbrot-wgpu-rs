@@ -399,45 +399,9 @@
 <span id="399">399</span>
 <span id="400">400</span>
 <span id="401">401</span>
-<span id="402">402</span>
-<span id="403">403</span>
-<span id="404">404</span>
-<span id="405">405</span>
-<span id="406">406</span>
-<span id="407">407</span>
-<span id="408">408</span>
-<span id="409">409</span>
-<span id="410">410</span>
-<span id="411">411</span>
-<span id="412">412</span>
-<span id="413">413</span>
-<span id="414">414</span>
-<span id="415">415</span>
-<span id="416">416</span>
-<span id="417">417</span>
-<span id="418">418</span>
-<span id="419">419</span>
-<span id="420">420</span>
-<span id="421">421</span>
-<span id="422">422</span>
-<span id="423">423</span>
-<span id="424">424</span>
-<span id="425">425</span>
-<span id="426">426</span>
-<span id="427">427</span>
-<span id="428">428</span>
-<span id="429">429</span>
-<span id="430">430</span>
-<span id="431">431</span>
-<span id="432">432</span>
-<span id="433">433</span>
-<span id="434">434</span>
-<span id="435">435</span>
-<span id="436">436</span>
-<span id="437">437</span>
-<span id="438">438</span>
-<span id="439">439</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! This file contains code that sets up the communication between the CPU and the GPU.</span>
+
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">winit</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">wgpu</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">env_logger</span>;
@@ -472,10 +436,12 @@
 <span class="kw">use</span> <span class="ident">wgpu</span>::<span class="ident">CommandBuffer</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::{<span class="ident">AtomicBool</span>, <span class="ident">Ordering</span>};
 
+<span class="doccomment">/// Window title</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">TITLE</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;Ah shit here we go again&quot;</span>;
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">ZOOM_SENSITIVITY</span>: <span class="ident">f32</span> <span class="op">=</span> <span class="number">0.9</span>;
 
 <span class="macro">lazy_static</span><span class="macro">!</span> {
+	<span class="doccomment">/// Gta San Andreas Icon. CJ Cameo</span>
 	<span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">ICON</span>: <span class="ident">winit</span>::<span class="ident">window</span>::<span class="ident">Icon</span> <span class="op">=</span> {
 		<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">io</span>::<span class="ident">Read</span>;
 		<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">icon_file_path</span> <span class="op">=</span> <span class="ident">ABSOLUTE_PATH</span>.<span class="ident">clone</span>();
@@ -489,6 +455,15 @@
 	};
 }
 
+<span class="doccomment">/// Main function.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// 1. Creates a window, a surface to draw on.</span>
+<span class="doccomment">/// 2. Gets a GPU device from `wgpu`.</span>
+<span class="doccomment">/// 3. Creates the different separate views you can change to.</span>
+<span class="doccomment">/// 4. Starts watcher thread that listens to OS write events and reloads</span>
+<span class="doccomment">///    fragment shader while the program is running.</span>
+<span class="doccomment">/// 5. Starts the event loop, in which it passes user input events</span>
+<span class="doccomment">///    to the current view using the `SwitchableViewManager`.</span>
 <span class="kw">fn</span> <span class="ident">main</span>() {
 	<span class="ident">env_logger</span>::<span class="ident">init</span>();
 
@@ -554,14 +529,14 @@
 	<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">sc_desc</span> <span class="op">=</span> <span class="ident">wgpu</span>::<span class="ident">SwapChainDescriptor</span> {
 		<span class="ident">usage</span>: <span class="ident">wgpu</span>::<span class="ident">TextureUsage</span>::<span class="ident">OUTPUT_ATTACHMENT</span>,
 		<span class="ident">format</span>: <span class="ident">render_format</span>,
-		<span class="ident">width</span>: <span class="ident">psize</span>.<span class="ident">width</span>.<span class="ident">round</span>() <span class="kw">as</span> <span class="ident">u32</span>,
-		<span class="ident">height</span>: <span class="ident">psize</span>.<span class="ident">height</span>.<span class="ident">round</span>() <span class="kw">as</span> <span class="ident">u32</span>,
+		<span class="ident">width</span>: <span class="ident">lsize</span>.<span class="ident">width</span>.<span class="ident">round</span>() <span class="kw">as</span> <span class="ident">u32</span>,
+		<span class="ident">height</span>: <span class="ident">lsize</span>.<span class="ident">height</span>.<span class="ident">round</span>() <span class="kw">as</span> <span class="ident">u32</span>,
 		<span class="ident">present_mode</span>: <span class="ident">wgpu</span>::<span class="ident">PresentMode</span>::<span class="ident">Vsync</span>,
 	};
 	<span class="kw">let</span> (<span class="ident">_watcher</span>, <span class="ident">frag_file_change_receiver</span>) <span class="op">=</span> <span class="ident">create_watcher</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">FRAG_SHADER_PATH</span>);
 
-	<span class="kw">let</span> <span class="ident">single_view</span> <span class="op">=</span> <span class="ident">MandelbrotViewManager</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">lsize</span>.<span class="ident">clone</span>());
-	<span class="kw">let</span> <span class="ident">double_view</span> <span class="op">=</span> <span class="ident">DoubleViewManager</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">lsize</span>.<span class="ident">clone</span>());
+	<span class="kw">let</span> <span class="ident">single_view</span> <span class="op">=</span> <span class="ident">MandelbrotViewManager</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">lsize</span>);
+	<span class="kw">let</span> <span class="ident">double_view</span> <span class="op">=</span> <span class="ident">DoubleViewManager</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">lsize</span>);
 
 	<span class="kw">let</span> <span class="ident">swap_chain</span> <span class="op">=</span> <span class="ident">device</span>.<span class="ident">create_swap_chain</span>(
 		<span class="kw-2">&amp;</span><span class="ident">surface</span>,
@@ -612,7 +587,6 @@
 			<span class="kw">loop</span> {
 				<span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">notify</span>::<span class="ident">DebouncedEvent</span>::<span class="ident">Write</span>(..)) <span class="op">=</span> <span class="ident">frag_file_change_receiver</span>.<span class="ident">recv</span>() {
 					<span class="ident">log</span>::<span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Write event in fragment shader&quot;</span>);
-<span class="comment">//					let window = window.lock().unwrap();</span>
 					<span class="ident">window</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">set_title</span>(<span class="string">&quot;Loading fragment shader...&quot;</span>);
 					<span class="ident">view</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">reload_fs</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>);
 					<span class="ident">changed</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">set</span>(<span class="bool-val">true</span>, <span class="string">&quot;Write to shader&quot;</span>);
@@ -623,55 +597,7 @@
 			}
 		});
 	}
-<span class="comment">//	let mut render = {</span>
-<span class="comment">//		let device = Arc::clone(&amp;device);</span>
-<span class="comment">//		let window = Arc::clone(&amp;window);</span>
-<span class="comment">//		let view = Arc::clone(&amp;single_view);</span>
-<span class="comment">//		let changed = Arc::clone(&amp;changed);</span>
-<span class="comment">//		let please_set_title_back = Arc::clone(&amp;please_set_title_back);</span>
-<span class="comment">//		let swap_chain = Arc::clone(&amp;swap_chain);</span>
-<span class="comment">//		let queue = Arc::clone(&amp;queue);</span>
-<span class="comment">//		let is_double = Arc::clone(&amp;is_double);</span>
-<span class="comment">//		move || {</span>
-<span class="comment">//			log::info!(&quot;Redraw requested&quot;);</span>
-<span class="comment">//			let mut bufs: Vec&lt;CommandBuffer&gt;;</span>
-<span class="comment">//			if please_set_title_back.load(Ordering::SeqCst) {</span>
-<span class="comment">//				log::info!(&quot;Setting title back&quot;);</span>
-<span class="comment">//				window.lock().unwrap().set_title(TITLE);</span>
-<span class="comment">//				please_set_title_back.store(false, Ordering::SeqCst);</span>
-<span class="comment">//			}</span>
-<span class="comment">//			let mut swap_chain = swap_chain.lock().unwrap();</span>
-<span class="comment">//			let frame = swap_chain.get_next_texture();</span>
-<span class="comment">//			if is_double.load(Ordering::SeqCst) {</span>
-<span class="comment">//				log::info!(&quot;Double rendering&quot;);</span>
-<span class="comment">//				let buf1 = left_view.lock().unwrap().render(</span>
-<span class="comment">//					&amp;device, &amp;frame</span>
-<span class="comment">//				);</span>
-<span class="comment">//				let buf2 = right_view.lock().unwrap().render(</span>
-<span class="comment">//					&amp;device, &amp;frame</span>
-<span class="comment">//				);</span>
-<span class="comment">//				bufs = vec![buf1, buf2];</span>
-<span class="comment">//			} else {</span>
-<span class="comment">//				log::info!(&quot;Rendering single&quot;);</span>
-<span class="comment">//				let render_buf = view.lock().unwrap().render(</span>
-<span class="comment">//					&amp;device, &amp;frame</span>
-<span class="comment">//				);</span>
-<span class="comment">//				bufs = vec![render_buf];</span>
-<span class="comment">//			}</span>
-<span class="comment">//</span>
-<span class="comment">//			let fps_buf = fps_command(</span>
-<span class="comment">//				&amp;device,</span>
-<span class="comment">//				&amp;mut fps_glyph_brush,</span>
-<span class="comment">//				&amp;size,</span>
-<span class="comment">//				&amp;frame,</span>
-<span class="comment">//				&amp;mut past</span>
-<span class="comment">//			);</span>
-<span class="comment">//			bufs.push(fps_buf);</span>
-<span class="comment">//			queue.lock().unwrap().submit(&amp;bufs);</span>
-<span class="comment">//			changed.lock().unwrap().set(false, &quot;Just rendered so false.&quot;);</span>
-<span class="comment">//		}</span>
-<span class="comment">//	};</span>
-
+	<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">cognitive_complexity</span>)]</span> <span class="comment">// Hard to break up</span>
 	<span class="ident">event_loop</span>.<span class="ident">run</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">event</span>, <span class="kw">_</span>, <span class="ident">control_flow</span><span class="op">|</span> {
 		<span class="kw-2">*</span><span class="ident">control_flow</span> <span class="op">=</span> <span class="kw">if</span> <span class="macro">cfg</span><span class="macro">!</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;metal-auto-capture&quot;</span>) {
 			<span class="ident">ControlFlow</span>::<span class="ident">Exit</span>
@@ -707,7 +633,7 @@
 					<span class="ident">changed</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">set</span>(<span class="bool-val">false</span>, <span class="string">&quot;Just rendered so false.&quot;</span>);
 				}
 				<span class="ident">event</span>::<span class="ident">WindowEvent</span>::<span class="ident">Resized</span>(<span class="ident">size</span>) <span class="op">=</span><span class="op">&gt;</span> {
-					<span class="kw">let</span> <span class="ident">physical</span> <span class="op">=</span> <span class="ident">size</span>.<span class="ident">to_physical</span>(<span class="ident">hidpi_factor</span>);
+					<span class="kw">let</span> <span class="ident">physical</span> <span class="op">=</span> <span class="ident">size</span>; <span class="comment">// logical xd</span>
 					<span class="ident">log</span>::<span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Resizing to {:?}&quot;</span>, <span class="ident">physical</span>);
 					<span class="kw">if</span> <span class="ident">physical</span>.<span class="ident">width</span> <span class="op">=</span><span class="op">=</span> <span class="number">0.</span> <span class="op">|</span><span class="op">|</span> <span class="ident">physical</span>.<span class="ident">height</span> <span class="op">=</span><span class="op">=</span> <span class="number">0.</span> {
 						<span class="kw">return</span>;
@@ -745,12 +671,10 @@
 					<span class="kw">let</span> <span class="ident">command_buf</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">CommandBuffer</span><span class="op">&gt;</span><span class="op">&gt;</span>;
 					<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">current_view</span> <span class="op">=</span> <span class="ident">current_view</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>();
 					<span class="kw">if</span> <span class="ident">is_left_button_pressed</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">is_cursor_on_screen</span> {
-						<span class="ident">log</span>::<span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;New active position: {:?}, {:?}&quot;</span>, <span class="ident">x</span>, <span class="ident">y</span>);
 						<span class="ident">command_buf</span> <span class="op">=</span>
 							<span class="ident">current_view</span>.<span class="ident">new_position</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">x</span>, <span class="ident">y</span>, <span class="bool-val">true</span>);
 						<span class="ident">changed</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">set</span>(<span class="bool-val">true</span>, <span class="string">&quot;cursor moved&quot;</span>);
 					} <span class="kw">else</span> {
-						<span class="ident">log</span>::<span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;New passive position: {:?}, {:?}&quot;</span>, <span class="ident">x</span>, <span class="ident">y</span>);
 						<span class="ident">command_buf</span> <span class="op">=</span>
 							<span class="ident">current_view</span>.<span class="ident">new_position</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">x</span>, <span class="ident">y</span>, <span class="bool-val">false</span>);
 
@@ -799,7 +723,7 @@
 						<span class="ident">command_buf</span> <span class="op">=</span> <span class="ident">current_view</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">iterations</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">y_delta</span>);
 						<span class="ident">changed</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">set</span>(<span class="bool-val">true</span>, <span class="string">&quot;iterations&quot;</span>);
 					} <span class="kw">else</span> {
-<span class="comment">// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149</span>
+						<span class="comment">// https://github.com/danyshaanan/mandelbrot/blob/master/docs/glsl/index.htm#L149</span>
 						<span class="ident">command_buf</span> <span class="op">=</span> <span class="ident">current_view</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">zoom</span>(<span class="kw-2">&amp;</span><span class="ident">device</span>, <span class="ident">y_delta</span>);
 						<span class="ident">changed</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">set</span>(<span class="bool-val">true</span>, <span class="string">&quot;zoom&quot;</span>);
 					}

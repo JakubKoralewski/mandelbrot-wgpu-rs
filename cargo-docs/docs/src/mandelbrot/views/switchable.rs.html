@@ -101,7 +101,13 @@
 <span id="101">101</span>
 <span id="102">102</span>
 <span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! `SwitchableViewManager` owns all view managers, is a view manager itself,</span>
+<span class="doccomment">//! and passes events to the manager dependent on its `current` property.</span>
+
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">prelude</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">FractalViewManager</span>, <span class="ident">MandelbrotViewManager</span>, <span class="ident">DoubleViewManager</span>};
 <span class="kw">use</span> <span class="ident">wgpu</span>::{<span class="ident">Device</span>, <span class="ident">SwapChainOutput</span>, <span class="ident">CommandBuffer</span>};
