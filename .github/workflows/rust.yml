@@ -29,7 +29,7 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "Github Action Push Docs"
         git add --all
-        git diff --quiet && git commit -m "Add docs from https://github.com/JakubKoralewski/mandelbrot-wgpu-rs/commit/$GITHUB_SHA"
+        git commit -m "Add docs from https://github.com/JakubKoralewski/mandelbrot-wgpu-rs/commit/$GITHUB_SHA" || echo "No changes to commit"
     - name: Push changes
       uses: ad-m/github-push-action@master
       with:
